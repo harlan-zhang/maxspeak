@@ -15,7 +15,7 @@ import { useTTSStore } from '@/lib/store/useTTSStore';
 import { usePlayerStore } from '@/lib/store/usePlayerStore';
 import { useSettingsStore } from '@/lib/store/useSettingsStore';
 import { estimateCost } from '@/lib/utils';
-import { hexAudioToBlob, formatToExtension } from '@/lib/audio/utils';
+import { formatToExtension } from '@/lib/audio/utils';
 import { stopCurrent } from '@/lib/audio/player';
 import { streamAndPlay } from '@/lib/audio/stream-decoder';
 import { PRICING, PARAM_RANGES } from '@/lib/minimax/constants';
@@ -140,9 +140,9 @@ export function TextToSpeechPanel() {
         );
       } else {
         // -------- SYNCHRONOUS PATH --------
-        // API returns MiniMax JSON response containing audio_file (CDN URL)
-        // The CDN URL is set directly on <audio>.src — native audio playback
-        // has NO CORS restrictions, so cross-origin CDN URLs work perfectly.
+        // Two possible response types from /api/tts/synthesize:
+        //  a) JSON { audio_file: "https://cdn..." } → play CDN URL directly
+        //  b) Binary audio (Content-Type: audio/*) → create blob URL for <audio>
         const res = await fetch('/api/tts/synthesize', {
           method: 'POST',
           headers: {
@@ -154,39 +154,47 @@ export function TextToSpeechPanel() {
         });
 
         if (!res.ok) {
-          const err = await res.json().catch(() => ({ error: `API error: ${res.status}` }));
-          throw new Error(err.error || `API error: ${res.status}`);
+          const errText = await res.text();
+          let errMsg = `API error: ${res.status}`;
+          try {
+            const errJson = JSON.parse(errText);
+            errMsg = errJson.error || errMsg;
+          } catch {}
+          throw new Error(errMsg);
         }
 
-        const data = await res.json();
+        const contentType = res.headers.get('content-type') || '';
+        const fileName = `tts-${Date.now()}.${formatToExtension(tts.audioFormat)}`;
 
-        if (data.audio_file) {
-          // Set the CDN URL directly — <audio> element doesn't need CORS
-          const fileName = `tts-${Date.now()}.${formatToExtension(tts.audioFormat)}`;
-          player.setAudioUrl(data.audio_file);
-          player.setLastGeneratedAudio({ url: data.audio_file, format: tts.audioFormat, fileName });
-          if (data.extra_info?.audio_length) {
-            player.setDuration(data.extra_info.audio_length / 1000);
-          }
-          if (settings.autoPlay) {
-            requestAnimationFrame(() => requestAnimationFrame(() => {
-              (window as any).__audioPlayerPlay?.();
-            }));
-          }
-        } else if (data.data?.audio) {
-          // hex data fallback
-          const blob = hexAudioToBlob(data.data.audio, tts.audioFormat, tts.sampleRate);
+        if (contentType.startsWith('audio/')) {
+          // ── Binary audio response (server converted hex → raw audio) ──
+          const blob = await res.blob();
           const blobUrl = URL.createObjectURL(blob);
-          const fileName = `tts-${Date.now()}.${formatToExtension(tts.audioFormat)}`;
           player.setAudioUrl(blobUrl);
-          player.setLastGeneratedAudio({ hex: data.data.audio, format: tts.audioFormat, fileName });
-          if (settings.autoPlay) {
-            requestAnimationFrame(() => requestAnimationFrame(() => {
-              (window as any).__audioPlayerPlay?.();
-            }));
-          }
+          player.setLastGeneratedAudio({ url: blobUrl, format: tts.audioFormat, fileName });
+          // Try to get duration from header if available
+          const durationMs = parseInt(res.headers.get('x-audio-duration') || '0', 10);
+          if (durationMs > 0) player.setDuration(durationMs / 1000);
         } else {
-          throw new Error('API 未返回音频数据。请检查 API Key 和音色 ID 是否正确。');
+          // ── JSON response (CDN URL) ──
+          const data = await res.json();
+
+          if (data.audio_file) {
+            // Set the CDN URL directly — <audio> element doesn't need CORS
+            player.setAudioUrl(data.audio_file);
+            player.setLastGeneratedAudio({ url: data.audio_file, format: tts.audioFormat, fileName });
+            if (data.extra_info?.audio_length) {
+              player.setDuration(data.extra_info.audio_length / 1000);
+            }
+          } else {
+            throw new Error('API 未返回音频数据。请检查 API Key 和音色 ID 是否正确。');
+          }
+        }
+
+        if (settings.autoPlay) {
+          requestAnimationFrame(() => requestAnimationFrame(() => {
+            (window as any).__audioPlayerPlay?.();
+          }));
         }
 
         player.setLoading(false);

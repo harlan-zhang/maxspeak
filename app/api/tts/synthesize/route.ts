@@ -1,16 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+/** Convert hex string to Uint8Array (server-safe, no DOM) */
+function hexToBytes(hex: string): Uint8Array {
+  const clean = hex.replace(/\s/g, '');
+  const bytes = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < clean.length; i += 2) {
+    bytes[i / 2] = parseInt(clean.substring(i, i + 2), 16);
+  }
+  return bytes;
+}
+
+/** Get MIME type from audio format string */
+function formatToMime(fmt: string): string {
+  switch (fmt) {
+    case 'mp3': return 'audio/mpeg';
+    case 'wav': return 'audio/wav';
+    case 'flac': return 'audio/flac';
+    case 'pcm': return 'audio/wav'; // PCM → WAV container via client
+    default: return 'audio/mpeg';
+  }
+}
+
 /**
  * POST /api/tts/synthesize
  *
- * Lightweight proxy: calls MiniMax API and returns the CDN audio URL.
+ * Calls MiniMax TTS API. Two return modes:
+ *  1. CDN URL  → returned as JSON `{ audio_file: "https://..." }`
+ *  2. Hex data → converted to binary audio on the server and returned
+ *     as a raw audio response (Content-Type: audio/mpeg etc.)
  *
- * We intentionally do NOT download the CDN audio server-side because:
+ * We intentionally do NOT download CDN audio server-side because:
  *  - Vercel serverless functions have ~4.5 MB response body limits
- *  - <audio> element playback is NOT subject to CORS — the browser can
- *    play cross-origin CDN URLs directly without any issue
- *  - Download is handled by the /api/tts/download proxy (which streams
- *    CDN → browser and sets Content-Disposition for save-as)
+ *  - <audio> element playback is NOT subject to CORS
  */
 export async function POST(request: NextRequest) {
   try {
@@ -22,6 +43,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
+    const audioFormat: string = body.audio_setting?.format || 'mp3';
     const logBody = { ...body, text: (body.text || '').slice(0, 40) };
     console.log('[synthesize] → MiniMax', JSON.stringify(logBody));
 
@@ -58,9 +80,48 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Return the MiniMax response as JSON — the CDN URL will be played
-    // directly by the browser <audio> element (no CORS restrictions).
-    return NextResponse.json(ttsData);
+    // ── CDN URL path (preferred) ─────────────────────────────
+    if (ttsData.audio_file) {
+      console.log('[synthesize] CDN URL:', String(ttsData.audio_file).slice(0, 100));
+      return NextResponse.json(ttsData);
+    }
+
+    // ── Hex data path (fallback — MiniMax sometimes returns hex) ──
+    if (ttsData.data?.audio) {
+      const hexLen = String(ttsData.data.audio).length;
+      console.log(`[synthesize] Hex data: ${hexLen} chars, format=${audioFormat}`);
+
+      // Edge case: hex payload is suspiciously small (< 200 chars = < 100 bytes)
+      // MiniMax sometimes returns a tiny placeholder instead of real audio
+      if (hexLen < 200) {
+        console.error('[synthesize] Hex payload too small — likely MiniMax error');
+        return NextResponse.json(
+          { error: 'MiniMax returned empty audio data. Try a different model or format.' },
+          { status: 502 }
+        );
+      }
+
+      const audioBytes = hexToBytes(ttsData.data.audio);
+      const mimeType = formatToMime(audioFormat);
+
+      console.log(`[synthesize] Returning binary audio: ${audioBytes.byteLength} bytes, type=${mimeType}`);
+
+      return new NextResponse(Buffer.from(audioBytes), {
+        headers: {
+          'Content-Type': mimeType,
+          'Content-Length': String(audioBytes.byteLength),
+          'X-Audio-Duration': String(ttsData.extra_info?.audio_length || 0),
+          'X-Audio-Format': audioFormat,
+        },
+      });
+    }
+
+    // Neither CDN URL nor hex data — shouldn't happen but handle gracefully
+    console.error('[synthesize] No audio data in response:', Object.keys(ttsData));
+    return NextResponse.json(
+      { error: 'MiniMax returned no audio data. Check model/format compatibility.' },
+      { status: 502 }
+    );
   } catch (error) {
     console.error('[synthesize] Exception:', error);
     return NextResponse.json(
