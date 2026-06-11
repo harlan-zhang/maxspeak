@@ -81,12 +81,12 @@ export function getAudioDuration(blob: Blob): Promise<number> {
 }
 
 /** Create a downloadable Blob from hex audio data + format info */
-export function hexAudioToBlob(hex: string, format: string, sampleRate: number = 32000): Blob {
+export function hexAudioToBlob(hex: string, format: string, sampleRate: number = 32000, numChannels: number = 1): Blob {
   const buffer = hexToArrayBuffer(hex);
 
   switch (format) {
     case 'pcm':
-      return pcmToWav(buffer, sampleRate);
+      return pcmToWav(buffer, sampleRate, numChannels);
     case 'mp3':
       return new Blob([buffer], { type: 'audio/mpeg' });
     case 'wav':
@@ -99,42 +99,20 @@ export function hexAudioToBlob(hex: string, format: string, sampleRate: number =
 }
 
 /**
- * Smart hex→Blob: detects actual format from magic bytes.
+ * Smart hex→Blob with optional format override.
  *
- * MiniMax in url-fallback mode sometimes returns raw PCM regardless of
- * the requested format. Using the REQUESTED format as MIME type on raw
- * PCM bytes produces DEMUXER_ERROR. This function inspects the data
- * and wraps bare PCM in a WAV container when needed.
+ * MiniMax hex data respects the requested format — MP3/WAV/FLAC are
+ * already valid containers. Only PCM needs a WAV wrapper added.
+ * Magic-byte detection is unreliable (ID3 tags, OGG headers, etc.)
+ * so we trust the format parameter from MiniMax's response.
  */
 export function smartHexToBlob(
   hex: string,
-  fallbackFormat: string,
+  audioFormat: string,
   sampleRate: number = 32000,
   numChannels: number = 1,
 ): Blob {
-  const buffer = hexToArrayBuffer(hex);
-  const view = new DataView(buffer);
-
-  // Check magic bytes to determine actual container format
-  if (buffer.byteLength >= 4) {
-    // RIFF....WAVE = WAV container
-    if (view.getUint8(0) === 0x52 && view.getUint8(1) === 0x49 &&
-        view.getUint8(2) === 0x46 && view.getUint8(3) === 0x46) {
-      return new Blob([buffer], { type: 'audio/wav' });
-    }
-    // fLaC = FLAC container
-    if (view.getUint8(0) === 0x66 && view.getUint8(1) === 0x4C &&
-        view.getUint8(2) === 0x61 && view.getUint8(3) === 0x43) {
-      return new Blob([buffer], { type: 'audio/flac' });
-    }
-    // FF FB / FF F3 / FF FA / FF F2 = MPEG audio (MP3)
-    if (view.getUint8(0) === 0xFF && (view.getUint8(1) & 0xE0) === 0xE0) {
-      return new Blob([buffer], { type: 'audio/mpeg' });
-    }
-  }
-
-  // No known container → assume raw PCM → wrap in WAV
-  return pcmToWav(buffer, sampleRate, numChannels);
+  return hexAudioToBlob(hex, audioFormat, sampleRate, numChannels);
 }
 
 /** Get file extension from format */
