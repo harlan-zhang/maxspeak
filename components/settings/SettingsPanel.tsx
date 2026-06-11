@@ -69,7 +69,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                   </button>
                 </div>
                 <p className="text-xs text-[rgb(var(--muted-foreground))] mt-1">
-                  在 <a href="https://platform.minimax.io" target="_blank" rel="noopener noreferrer" className="text-primary-600 hover:underline">platform.minimax.io</a> 获取 API Key
+                  在 <a href={settings.baseUrl.includes('minimaxi.com') ? 'https://platform.minimaxi.com' : 'https://platform.minimax.io'} target="_blank" rel="noopener noreferrer" className="text-primary-600 hover:underline">{settings.baseUrl.includes('minimaxi.com') ? 'platform.minimaxi.com' : 'platform.minimax.io'}</a> 获取 API Key
                 </p>
               </div>
 

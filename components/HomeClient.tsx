@@ -12,6 +12,10 @@ import { AlertCircle, Settings, ArrowRight } from 'lucide-react';
 export function HomeClient() {
   const activeTab = useNavStore((s) => s.activeTab);
   const apiKey = useSettingsStore((s) => s.apiKey);
+  const baseUrl = useSettingsStore((s) => s.baseUrl);
+  const isCN = baseUrl.includes('minimaxi.com');
+  const platformUrl = isCN ? 'https://platform.minimaxi.com' : 'https://platform.minimax.io';
+  const platformHost = isCN ? 'platform.minimaxi.com' : 'platform.minimax.io';
 
   return (
     <div className="flex flex-col h-full">
@@ -24,10 +28,10 @@ export function HomeClient() {
             <AlertCircle size={16} className="flex-shrink-0" />
             <span>未设置 API Key，无法合成语音。</span>
             <span className="hidden sm:inline text-amber-600 dark:text-amber-400 text-xs">
-              前往 <a href="https://platform.minimax.io" target="_blank"
+              前往 <a href={platformUrl} target="_blank"
                        rel="noopener noreferrer"
                        className="underline hover:no-underline font-medium">
-                platform.minimax.io
+                {platformHost}
               </a> 获取 MiniMax API Key
             </span>
           </div>
