@@ -63,19 +63,28 @@ npx wrangler pages deploy .vercel/output/static
 ## 架构 — MiniMax API 代理层
 
 ```
-浏览器                    Next.js 服务端                MiniMax API
-  │                           │                            │
-  ├─ POST /api/tts/synthesize ──►  POST /v1/t2a_v2 ──►    ┌─ 音频 CDN URL
-  │                           │                            │──► hex 音频数据
-  │                           │   ◄── 服务端 fetch CDN ──┤
-  │  ◄── raw audio blob ─────┤                            │
-  │                           │                            │
-  ▼                    API Key 全程仅服务端可见               ▼
- [blob URL → <audio>]                                  [300+ 音色]
+浏览器                    Next.js 服务端                   MiniMax API
+  │                           │                              │
+  ├─ POST /api/tts/synthesize ──►  POST /v1/t2a_v2 ──►       │
+  │                           │    (output_format=hex)       │
+  │                           │                              │
+  │                           │   ◄── hex 音频数据 ──────────┤
+  │                           │                              │
+  │                           │   服务端格式检测:              │
+  │                           │   ID3/MP3 · RIFF/WAV          │
+  │                           │   fLaC/FLAC · OggS/OGG        │
+  │                           │   都不是? → PCM → 封装 WAV    │
+  │                           │                              │
+  │  ◄── binary audio blob ───┤                              │
+  │  (Content-Type: audio/*)  │                              │
+  │                           │                              │
+  ▼                   API Key 全程仅服务端可见                  ▼
+ [blob URL → <audio>]                                    [300+ 音色]
 ```
 
 - **API Key 不会泄露到浏览器** — 所有 MiniMax 请求经 Next.js 服务端路由代理
-- **CDN 音频由服务端抓取**并以同源 blob 返回，消除跨域问题
+- **服务端格式检测** — 自动识别 5 种音频容器（ID3/MP3、RIFF/WAV、fLaC/FLAC、OggS/OGG、FFxx/MPEG），裸 PCM 自动封装 WAV 头
+- **二进制返回** — 服务端始终返回 `Content-Type: audio/*`，客户端 `res.blob()` 单一路径，无 JSON 分支
 - 流式合成使用 SSE 透传 + 实时 chunk 解码
 
 ## 支持的语言与音色
@@ -129,7 +138,7 @@ maxspeak/
 ├── app/
 │   ├── layout.tsx      # 布局 + SEO 元数据
 │   ├── page.tsx        # 主页面（标签页路由）
-│   └── api/            # 6 个 API Route 处理器
+│   └── api/            # 7 个 API Route 处理器
 ├── components/
 │   ├── layout/         # 侧边栏、顶栏、主题切换
 │   ├── tts/            # 语音合成面板及子控件

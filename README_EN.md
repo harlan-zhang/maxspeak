@@ -63,19 +63,28 @@ npx wrangler pages deploy .vercel/output/static
 ## Architecture — MiniMax API Proxy
 
 ```
-Browser                Next.js Server              MiniMax API
-  │                         │                          │
-  ├─ POST /api/tts/synthesize ──►  POST /v1/t2a_v2 ──►   ┌─ audio CDN URL
-  │                         │                          │──► hex audio data
-  │                         │   ◄── fetch CDN binary ──┤
-  │  ◄── raw audio blob ────┤                          │
-  │                         │                          │
-  ▼                    API Key stays server-side       ▼
- [blob URL → <audio>]                              [300+ voices]
+Browser                Next.js Server                   MiniMax API
+  │                         │                               │
+  ├─ POST /api/tts/synthesize ──►  POST /v1/t2a_v2 ──►        │
+  │                         │    (output_format=hex)          │
+  │                         │                               │
+  │                         │   ◄── hex audio data ─────────┤
+  │                         │                               │
+  │                         │   Server format detection:     │
+  │                         │   ID3/MP3 · RIFF/WAV           │
+  │                         │   fLaC/FLAC · OggS/OGG         │
+  │                         │   unmatched? → PCM → WAV wrap  │
+  │                         │                               │
+  │  ◄── binary audio blob ─┤                               │
+  │  (Content-Type: audio/*)│                               │
+  │                         │                               │
+  ▼                   API Key stays server-side               ▼
+ [blob URL → <audio>]                                   [300+ voices]
 ```
 
 - **API Key never reaches the browser** — all MiniMax requests are proxied through Next.js server routes
-- **CDN audio is fetched server-side** and returned as a same-origin blob, eliminating CORS issues
+- **Server-side format detection** — auto-detects 5 container formats (ID3/MP3, RIFF/WAV, fLaC/FLAC, OggS/OGG, FFxx/MPEG); bare PCM auto-wrapped in WAV
+- **Binary response** — server always returns `Content-Type: audio/*`, client uses `res.blob()` single path
 - Streaming uses SSE passthrough with real-time chunk decoding
 
 ## Supported Languages & Voices
