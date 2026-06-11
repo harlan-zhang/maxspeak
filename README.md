@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/poster.webp" alt="MaxSpeak — AI 语音合成工作台" width="100%" />
+  <img src="https://maxspeak.vercel.app/poster.webp" alt="MaxSpeak — AI 语音合成工作台" width="100%" />
 </p>
 
 # <picture><source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/MaxSpeak-a78bfa?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iMiI+PHBhdGggZD0iTTIgM3YxOGgxOE0yIDlsOCA4bDQtNCIvPjxwYXRoIGQ9Ik0yMiA5djEyTTIgMTR2NyIvPjwvc3ZnPg=="><img alt="MaxSpeak" src="https://img.shields.io/badge/MaxSpeak-7c3aed?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iMiI+PHBhdGggZD0iTTIgM3YxOGgxOE0yIDlsOCA4bDQtNCIvPjxwYXRoIGQ9Ik0yMiA5djEyTTIgMTR2NyIvPjwvc3ZnPg=="></picture>
@@ -10,7 +10,7 @@
 >
 > 基于 [MiniMax](https://platform.minimax.io) 新一代语音大模型，提供文本转语音、音色复刻、音色设计一站式解决方案。
 
-[在线体验](#) · [部署到 Vercel](https://vercel.com/new) · [Cloudflare Pages](#)
+[🌐 在线体验](https://maxspeak.vercel.app) · [🚀 一键部署到 Vercel](https://vercel.com/new/clone?repository-url=https://github.com/harlan-zhang/maxspeak)
 
 ---
 
@@ -29,7 +29,7 @@
 ## 快速开始
 
 ```bash
-git clone https://github.com/your-username/maxspeak.git
+git clone https://github.com/harlan-zhang/maxspeak.git
 cd maxspeak
 npm install
 npm run dev
@@ -41,7 +41,7 @@ npm run dev
 
 ### Vercel（推荐）
 一键部署，零配置：
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/harlan-zhang/maxspeak)
 
 ### Cloudflare Pages
 ```bash

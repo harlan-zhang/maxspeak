@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/poster.webp" alt="MaxSpeak — AI Text to Speech Studio" width="100%" />
+  <img src="https://maxspeak.vercel.app/poster.webp" alt="MaxSpeak — AI Text to Speech Studio" width="100%" />
 </p>
 
 # <picture><source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/MaxSpeak-a78bfa?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iMiI+PHBhdGggZD0iTTIgM3YxOGgxOE0yIDlsOCA4bDQtNCIvPjxwYXRoIGQ9Ik0yMiA5djEyTTIgMTR2NyIvPjwvc3ZnPg=="><img alt="MaxSpeak" src="https://img.shields.io/badge/MaxSpeak-7c3aed?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iMiI+PHBhdGggZD0iTTIgM3YxOGgxOE0yIDlsOCA4bDQtNCIvPjxwYXRoIGQ9Ik0yMiA5djEyTTIgMTR2NyIvPjwvc3ZnPg=="></picture>
@@ -10,7 +10,7 @@
 >
 > Powered by [MiniMax](https://platform.minimax.io) — the leading speech synthesis API.
 
-[Live Demo](#) · [Deploy to Vercel](https://vercel.com/new) · [Cloudflare Pages](#)
+[🌐 Live Demo](https://maxspeak.vercel.app) · [🚀 Deploy to Vercel](https://vercel.com/new/clone?repository-url=https://github.com/harlan-zhang/maxspeak)
 
 ---
 
@@ -29,7 +29,7 @@
 ## Quick Start
 
 ```bash
-git clone https://github.com/your-username/maxspeak.git
+git clone https://github.com/harlan-zhang/maxspeak.git
 cd maxspeak
 npm install
 npm run dev
@@ -41,7 +41,7 @@ Open [http://localhost:3000](http://localhost:3000), click the settings gear, pa
 
 ### Vercel (Recommended)
 Click to deploy with zero configuration:
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/harlan-zhang/maxspeak)
 
 ### Cloudflare Pages
 ```bash
@@ -129,7 +129,7 @@ maxspeak/
 ├── app/
 │   ├── layout.tsx      # Layout + SEO metadata
 │   ├── page.tsx        # Main page with tab routing
-│   └── api/            # 6 API route handlers
+│   └── api/            # 7 API route handlers
 ├── components/
 │   ├── layout/         # Sidebar, Header, ThemeProvider
 │   ├── tts/            # Text-to-Speech panel & controls
