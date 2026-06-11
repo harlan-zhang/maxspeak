@@ -1,0 +1,36 @@
+{
+  "name": "maxspeak",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MaxSpeak — AI Text to Speech Studio with Voice Cloning & Voice Design, powered by MiniMax API",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "cf:build": "npx @cloudflare/next-on-pages",
+    "cf:deploy": "npx @cloudflare/next-on-pages && npx wrangler pages deploy .vercel/output/static"
+  },
+  "dependencies": {
+    "next": "^14.2.29",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^5.0.3",
+    "framer-motion": "^11.18.2",
+    "lucide-react": "^0.468.0",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^2.6.0",
+    "class-variance-authority": "^0.7.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "@types/node": "^22.10.10",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "tailwindcss": "^3.4.17",
+    "postcss": "^8.5.1",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^14.2.29"
+  }
+}
