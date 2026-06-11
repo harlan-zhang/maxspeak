@@ -138,6 +138,7 @@ maxspeak/
 │   ├── design/         # Voice design from text prompts
 │   ├── library/        # Voice library browser
 │   └── settings/       # Settings modal
+├── public/             # Logo, poster, and static assets
 └── lib/
     ├── minimax/        # API client, types, constants
     ├── audio/          # Playback engine, stream decoder, utilities

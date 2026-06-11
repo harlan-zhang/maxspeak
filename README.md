@@ -147,6 +147,7 @@ maxspeak/
 │   ├── design/         # 音色设计（文本描述生成）
 │   ├── library/        # 音色库浏览器
 │   └── settings/       # 设置弹窗
+├── public/             # Logo、海报图等静态资源
 └── lib/
     ├── minimax/        # API 客户端、类型定义、常量
     ├── audio/          # 播放引擎、流解码器、工具函数
