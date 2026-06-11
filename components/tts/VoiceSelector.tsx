@@ -4,7 +4,6 @@ import { useState, useMemo } from 'react';
 import { useTTSStore } from '@/lib/store/useTTSStore';
 import { PRESET_VOICES, VOICE_LANGUAGES, filterVoices } from '@/lib/voices/preset-voices';
 import { VoiceCard } from './VoiceCard';
-import { cn } from '@/lib/utils';
 import { Search } from 'lucide-react';
 import { User, UserRound, Bot } from 'lucide-react';
 

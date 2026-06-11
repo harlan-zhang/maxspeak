@@ -11,6 +11,37 @@ import { VoiceModifyControls } from './VoiceModifyControls';
 import { AudioSettings } from './AudioSettings';
 import { LanguageBoostSelect } from './LanguageBoostSelect';
 import { PronunciationEditor } from './PronunciationEditor';
+// ─── Static lookup tables (not recreated on every render) ───
+const LANG_MAP: Record<string, string> = {
+  Chinese: 'Chinese', English: 'English', Japanese: 'Japanese', Korean: 'Korean',
+  Cantonese: 'Chinese,Yue', Spanish: 'Spanish', French: 'French', Portuguese: 'Portuguese',
+  German: 'German', Russian: 'Russian', Arabic: 'Arabic', Italian: 'Italian',
+  Turkish: 'Turkish', Dutch: 'Dutch', Ukrainian: 'Ukrainian', Vietnamese: 'Vietnamese',
+  Indonesian: 'Indonesian', Thai: 'Thai', Polish: 'Polish', Hindi: 'Hindi',
+};
+const PREVIEW_TEXTS: Record<string, string> = {
+  Chinese: '你好，这是语音试听。',
+  Cantonese: '你好，呢個係語音試聽。',
+  English: 'Hello, this is a voice preview.',
+  Japanese: 'こんにちは、これは音声プレビューです。',
+  Korean: '안녕하세요, 이 목소리 미리듣기입니다.',
+  Spanish: 'Hola, esta es una vista previa de voz.',
+  French: 'Bonjour, ceci est un aperçu vocal.',
+  Portuguese: 'Olá, esta é uma prévia de voz.',
+  German: 'Hallo, dies ist eine Sprachvorschau.',
+  Russian: 'Здравствуйте, это предпросмотр голоса.',
+  Arabic: 'مرحبا، هذه معاينة صوتية.',
+  Italian: 'Ciao, questa è unanteprima vocale.',
+  Turkish: 'Merhaba, bu bir ses ön izlemesidir.',
+  Dutch: 'Hallo, dit is een stemvoorbeeld.',
+  Ukrainian: 'Привіт, це попередній перегляд голосу.',
+  Vietnamese: 'Xin chào, đây là bản xem trước giọng nói.',
+  Indonesian: 'Halo, ini pratinjau suara.',
+  Thai: 'สวัสดี นี่คือตัวอย่างเสียง',
+  Polish: 'Cześć, to jest podgląd głosu.',
+  Hindi: 'नमस्ते, यह आवाज का पूर्वावलोकन है।',
+};
+
 import { useTTSStore } from '@/lib/store/useTTSStore';
 import { usePlayerStore } from '@/lib/store/usePlayerStore';
 import { useSettingsStore } from '@/lib/store/useSettingsStore';
@@ -40,37 +71,8 @@ export function TextToSpeechPanel() {
     setPreviewLoading(voiceId);
     try {
       const voice = PRESET_VOICES.find(v => v.id === voiceId);
-      const langMap: Record<string, string> = {
-        Chinese: 'Chinese', English: 'English', Japanese: 'Japanese', Korean: 'Korean',
-        Cantonese: 'Chinese,Yue', Spanish: 'Spanish', French: 'French', Portuguese: 'Portuguese',
-        German: 'German', Russian: 'Russian', Arabic: 'Arabic', Italian: 'Italian',
-        Turkish: 'Turkish', Dutch: 'Dutch', Ukrainian: 'Ukrainian', Vietnamese: 'Vietnamese',
-        Indonesian: 'Indonesian', Thai: 'Thai', Polish: 'Polish', Hindi: 'Hindi',
-      };
-      const languageBoost = voice ? (langMap[voice.language] || 'auto') : 'auto';
-      const defaultTexts: Record<string, string> = {
-        Chinese: '你好，这是语音试听。',
-        Cantonese: '你好，呢個係語音試聽。',
-        English: 'Hello, this is a voice preview.',
-        Japanese: 'こんにちは、これは音声プレビューです。',
-        Korean: '안녕하세요, 이 목소리 미리듣기입니다.',
-        Spanish: 'Hola, esta es una vista previa de voz.',
-        French: 'Bonjour, ceci est un aperçu vocal.',
-        Portuguese: 'Olá, esta é uma prévia de voz.',
-        German: 'Hallo, dies ist eine Sprachvorschau.',
-        Russian: 'Здравствуйте, это предпросмотр голоса.',
-        Arabic: 'مرحبا، هذه معاينة صوتية.',
-        Italian: 'Ciao, questa è unanteprima vocale.',
-        Turkish: 'Merhaba, bu bir ses ön izlemesidir.',
-        Dutch: 'Hallo, dit is een stemvoorbeeld.',
-        Ukrainian: 'Привіт, це попередній перегляд голосу.',
-        Vietnamese: 'Xin chào, đây là bản xem trước giọng nói.',
-        Indonesian: 'Halo, ini pratinjau suara.',
-        Thai: 'สวัสดี นี่คือตัวอย่างเสียง',
-        Polish: 'Cześć, to jest podgląd głosu.',
-        Hindi: 'नमस्ते, यह आवाज का पूर्वावलोकन है।',
-      };
-      const sampleText = voice?.sampleText || defaultTexts[voice?.language || ''] || 'Hello, voice preview.';
+      const languageBoost = voice ? (LANG_MAP[voice.language] || 'auto') : 'auto';
+      const sampleText = voice?.sampleText || PREVIEW_TEXTS[voice?.language || ''] || 'Hello, voice preview.';
       const res = await fetch('/api/tts/synthesize', {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': settings.apiKey, 'x-base-url': settings.baseUrl },
         body: JSON.stringify({ model: 'speech-2.8-turbo', text: sampleText, voice_setting: { voice_id: voiceId }, audio_setting: { sample_rate: 24000, bitrate: 64000, format: 'mp3', channel: 1 }, language_boost: languageBoost, output_format: 'hex' }),
@@ -79,7 +81,7 @@ export function TextToSpeechPanel() {
       const blob = await res.blob();
       const audioUrl = URL.createObjectURL(blob);
       if (audioUrl) { const a = new Audio(audioUrl); a.play().catch(() => {}); }
-    } catch {} finally { setPreviewLoading(null); }
+    } catch { /* preview failed silently — non-critical */ } finally { setPreviewLoading(null); }
   }, [settings]);
 
   const handleSynthesize = useCallback(async () => {

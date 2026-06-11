@@ -26,7 +26,7 @@ function buildWav(pcm: Buffer, sampleRate: number, numChannels: number, bitsPerS
 }
 
 /** Determine actual format from first bytes */
-function detectFormat(buf: Buffer, declared: string): { mime: string; fmt: string } {
+function detectFormat(buf: Buffer): { mime: string; fmt: string } {
   // ID3v2 tag → MP3
   if (buf.length >= 3 && buf[0] === 0x49 && buf[1] === 0x44 && buf[2] === 0x33) {
     return { mime: 'audio/mpeg', fmt: 'mp3' };
@@ -117,12 +117,11 @@ export async function POST(request: NextRequest) {
     }
 
     const rawBuf = hexToBuffer(hex);
-    const declaredFmt = ttsData.extra_info?.audio_format || requestedFormat;
     const actualSr = ttsData.extra_info?.audio_sample_rate || sampleRate;
     const actualCh = ttsData.extra_info?.audio_channel || channels;
 
-    const { mime, fmt } = detectFormat(rawBuf, declaredFmt);
-    console.log(`[synthesize] ${rawBuf.length}B, declared=${declaredFmt}, detected=${fmt}, mime=${mime}`);
+    const { mime, fmt } = detectFormat(rawBuf);
+    console.log(`[synthesize] ${rawBuf.length}B, declared=${requestedFormat}, detected=${fmt}, mime=${mime}`);
 
     let outBuf: Buffer;
     if (fmt === 'pcm') {
