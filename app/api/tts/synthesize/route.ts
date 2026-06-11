@@ -1,53 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-/** Convert hex string → Uint8Array (server-safe, no DOM) */
-function hexToBytes(hex: string): Uint8Array {
-  const clean = hex.replace(/\s/g, '');
-  const bytes = new Uint8Array(clean.length / 2);
-  for (let i = 0; i < clean.length; i += 2) {
-    bytes[i / 2] = parseInt(clean.substring(i, i + 2), 16);
-  }
-  return bytes;
-}
-
-/** Build a valid WAV file container around raw PCM samples */
-function buildWav(pcmSamples: Uint8Array, sampleRate: number, numChannels: number, bitsPerSample: number): Buffer {
-  const dataLen = pcmSamples.byteLength;
-  const headerLen = 44;
-  const totalLen = headerLen + dataLen;
-  const buf = Buffer.alloc(totalLen);
-
-  // RIFF header
-  buf.write('RIFF', 0);
-  buf.writeUInt32LE(totalLen - 8, 4);
-  buf.write('WAVE', 8);
-
-  // fmt  chunk
-  buf.write('fmt ', 12);
-  buf.writeUInt32LE(16, 16);                        // subchunk size (PCM)
-  buf.writeUInt16LE(1, 20);                         // audio format (1 = PCM)
-  buf.writeUInt16LE(numChannels, 22);
-  buf.writeUInt32LE(sampleRate, 24);
-  buf.writeUInt32LE(sampleRate * numChannels * (bitsPerSample / 8), 28); // byte rate
-  buf.writeUInt16LE(numChannels * (bitsPerSample / 8), 32);              // block align
-  buf.writeUInt16LE(bitsPerSample, 34);
-
-  // data chunk
-  buf.write('data', 36);
-  buf.writeUInt32LE(dataLen, 40);
-  Buffer.from(pcmSamples).copy(buf, headerLen);
-
-  return buf;
-}
-
 /**
  * POST /api/tts/synthesize
  *
- * Proxy for MiniMax TTS API. Always uses output_format=hex (more reliable
- * than URL mode — no CDN expiry, no CORS, no HTML error pages).
+ * Proxies MiniMax TTS API. Returns JSON with either:
+ *   { audio_url: "https://cdn..." }  — client plays URL directly on <audio>
+ *   { audio_hex: "...", ... }       — client decodes hex → Blob → blob URL
  *
- * Returns binary audio with correct MIME type. PCM is wrapped in a valid
- * WAV container (browsers can't play raw PCM).
+ * Strategy: prefer output_format='url' (CDN), fall back to hex-in-JSON.
+ * We intentionally do NOT convert hex→binary on the server because Vercel's
+ * serverless runtime may mangle binary response bodies. Client-side
+ * hex→ArrayBuffer→Blob is fast, reliable, and uses the browser's native
+ * FormData/Blob APIs that have no such transport issues.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -62,8 +26,9 @@ export async function POST(request: NextRequest) {
     const audioFormat: string = body.audio_setting?.format || 'mp3';
     const sampleRate: number = body.audio_setting?.sample_rate || 32000;
     const channels: number = body.audio_setting?.channel || 1;
+
     const logBody = { ...body, text: (body.text || '').slice(0, 40) };
-    console.log('[synthesize] → MiniMax (hex mode)', JSON.stringify(logBody));
+    console.log('[synthesize] → MiniMax (url mode)', JSON.stringify(logBody));
 
     const ttsRes = await fetch(`${baseUrl}/v1/t2a_v2`, {
       method: 'POST',
@@ -71,8 +36,7 @@ export async function POST(request: NextRequest) {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
-      // Always force hex — self-contained, no CDN expiry, no CORS issues
-      body: JSON.stringify({ ...body, output_format: 'hex', stream: false }),
+      body: JSON.stringify({ ...body, output_format: 'url', stream: false }),
     });
 
     const ttsText = await ttsRes.text();
@@ -99,52 +63,39 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!ttsData.data?.audio) {
-      console.error('[synthesize] ✗ No hex data, keys:', Object.keys(ttsData));
-      return NextResponse.json(
-        { error: 'MiniMax returned no audio data.' },
-        { status: 502 }
-      );
+    // ── Path A: CDN URL (MiniMax's primary response format) ────
+    if (ttsData.audio_file) {
+      console.log('[synthesize] ✓ CDN URL:', String(ttsData.audio_file).slice(0, 100));
+      return NextResponse.json({
+        audio_url: ttsData.audio_file,
+        extra_info: ttsData.extra_info,
+      });
     }
 
-    const hex = String(ttsData.data.audio);
-    console.log(`[synthesize] Hex: ${hex.length / 2} bytes, fmt=${audioFormat}, sr=${sampleRate}`);
+    // ── Path B: Hex data (MiniMax falls back to hex for some format/model combos) ──
+    if (ttsData.data?.audio) {
+      const hex = String(ttsData.data.audio);
+      const byteLen = hex.length / 2;
+      console.log(`[synthesize] Hex fallback: ${byteLen} bytes, reqFmt=${audioFormat}`);
 
-    if (hex.length < 200) {
-      console.error('[synthesize] ✗ Hex payload too small');
-      return NextResponse.json(
-        { error: 'MiniMax returned empty audio data.' },
-        { status: 502 }
-      );
+      if (hex.length < 200) {
+        console.error('[synthesize] ✗ Hex payload too small');
+        return NextResponse.json({ error: 'MiniMax returned empty audio data.' }, { status: 502 });
+      }
+
+      // Return hex as JSON — the client does hex→Blob locally (more reliable
+      // than server-side binary body conversion on Vercel's runtime).
+      return NextResponse.json({
+        audio_hex: hex,
+        audio_format: audioFormat,
+        audio_sample_rate: sampleRate,
+        audio_channels: channels,
+        extra_info: ttsData.extra_info,
+      });
     }
 
-    const rawBytes = hexToBytes(hex);
-    let audioBuffer: Buffer;
-    let mimeType: string;
-
-    if (audioFormat === 'pcm') {
-      // Raw PCM → WAV container (browsers can't play bare PCM)
-      const wavBuf = buildWav(rawBytes, sampleRate, channels, 16);
-      audioBuffer = Buffer.from(wavBuf);
-      mimeType = 'audio/wav';
-      console.log(`[synthesize] PCM→WAV: ${rawBytes.byteLength}→${audioBuffer.byteLength}B`);
-    } else {
-      audioBuffer = Buffer.from(rawBytes);
-      mimeType = audioFormat === 'mp3' ? 'audio/mpeg'
-               : audioFormat === 'flac' ? 'audio/flac'
-               : 'audio/wav';
-    }
-
-    console.log(`[synthesize] ✓ ${audioBuffer.byteLength}B ${mimeType}`);
-
-    return new NextResponse(new Uint8Array(audioBuffer), {
-      headers: {
-        'Content-Type': mimeType,
-        'Content-Length': String(audioBuffer.byteLength),
-        'X-Audio-Duration': String(ttsData.extra_info?.audio_length || 0),
-        'X-Audio-Format': audioFormat,
-      },
-    });
+    console.error('[synthesize] ✗ No audio data, keys:', Object.keys(ttsData));
+    return NextResponse.json({ error: 'MiniMax returned no audio data.' }, { status: 502 });
   } catch (error) {
     console.error('[synthesize] Exception:', error);
     return NextResponse.json(
