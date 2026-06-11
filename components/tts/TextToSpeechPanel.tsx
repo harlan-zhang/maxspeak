@@ -15,7 +15,7 @@ import { useTTSStore } from '@/lib/store/useTTSStore';
 import { usePlayerStore } from '@/lib/store/usePlayerStore';
 import { useSettingsStore } from '@/lib/store/useSettingsStore';
 import { estimateCost } from '@/lib/utils';
-import { formatToExtension, smartHexToBlob } from '@/lib/audio/utils';
+import { formatToExtension } from '@/lib/audio/utils';
 import { stopCurrent } from '@/lib/audio/player';
 import { streamAndPlay } from '@/lib/audio/stream-decoder';
 import { PRICING, PARAM_RANGES } from '@/lib/minimax/constants';
@@ -76,14 +76,8 @@ export function TextToSpeechPanel() {
         body: JSON.stringify({ model: 'speech-2.8-turbo', text: sampleText, voice_setting: { voice_id: voiceId }, audio_setting: { sample_rate: 24000, bitrate: 64000, format: 'mp3', channel: 1 }, language_boost: languageBoost, output_format: 'hex' }),
       });
       if (!res.ok) return;
-      const data = await res.json();
-      let audioUrl: string | null = null;
-      if (data.audio_url) {
-        audioUrl = data.audio_url;
-      } else if (data.audio_hex) {
-        const blob = smartHexToBlob(data.audio_hex, data.audio_format || 'mp3', data.audio_sample_rate || 24000, data.audio_channels || 1);
-        audioUrl = URL.createObjectURL(blob);
-      }
+      const blob = await res.blob();
+      const audioUrl = URL.createObjectURL(blob);
       if (audioUrl) { const a = new Audio(audioUrl); a.play().catch(() => {}); }
     } catch {} finally { setPreviewLoading(null); }
   }, [settings]);
@@ -174,9 +168,7 @@ export function TextToSpeechPanel() {
         );
       } else {
         // -------- SYNCHRONOUS PATH --------
-        // Two possible response types from /api/tts/synthesize:
-        //  a) JSON { audio_file: "https://cdn..." } → play CDN URL directly
-        //  b) Binary audio (Content-Type: audio/*) → create blob URL for <audio>
+        // Server always returns binary audio (Content-Type: audio/*)
         const res = await fetch('/api/tts/synthesize', {
           method: 'POST',
           headers: {
@@ -194,34 +186,14 @@ export function TextToSpeechPanel() {
           throw new Error(errMsg);
         }
 
-        // Server returns JSON: { audio_url } or { audio_hex, audio_format, ... }
-        const data = await res.json();
-        const fileName = `tts-${Date.now()}.${formatToExtension(tts.audioFormat)}`;
-
-        if (data.audio_url) {
-          // CDN URL — play directly on <audio> (no CORS for media elements)
-          player.setAudioUrl(data.audio_url);
-          player.setLastGeneratedAudio({ url: data.audio_url, format: tts.audioFormat, fileName });
-          if (data.extra_info?.audio_length) {
-            player.setDuration(data.extra_info.audio_length / 1000);
-          }
-        } else if (data.audio_hex) {
-          // Hex data — decode on client with smart format detection
-          const blob = smartHexToBlob(
-            data.audio_hex,
-            data.audio_format || tts.audioFormat,
-            data.audio_sample_rate || tts.sampleRate,
-            data.audio_channels || tts.channel,
-          );
-          const blobUrl = URL.createObjectURL(blob);
-          player.setAudioUrl(blobUrl);
-          player.setLastGeneratedAudio({ url: blobUrl, format: tts.audioFormat, fileName });
-          if (data.extra_info?.audio_length) {
-            player.setDuration(data.extra_info.audio_length / 1000);
-          }
-        } else {
-          throw new Error('API 未返回音频数据。请检查 API Key 和音色 ID 是否正确。');
-        }
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const actualFmt = res.headers.get('x-audio-format') || tts.audioFormat;
+        const fileName = `tts-${Date.now()}.${formatToExtension(actualFmt)}`;
+        player.setAudioUrl(blobUrl);
+        player.setLastGeneratedAudio({ url: blobUrl, format: actualFmt, fileName });
+        const durationMs = parseInt(res.headers.get('x-audio-duration') || '0', 10);
+        if (durationMs > 0) player.setDuration(durationMs / 1000);
 
         if (settings.autoPlay) {
           requestAnimationFrame(() => requestAnimationFrame(() => {
