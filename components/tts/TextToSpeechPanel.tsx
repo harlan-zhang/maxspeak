@@ -45,11 +45,11 @@ export function TextToSpeechPanel() {
       const sampleText = voice?.sampleText || 'Hello, voice preview.';
       const res = await fetch('/api/tts/synthesize', {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': settings.apiKey, 'x-base-url': settings.baseUrl },
-        body: JSON.stringify({ model: 'speech-2.8-turbo', text: sampleText, voice_setting: { voice_id: voiceId }, audio_setting: { sample_rate: 24000, bitrate: 64000, format: 'mp3', channel: 1 }, language_boost: languageBoost, output_format: 'url' }),
+        body: JSON.stringify({ model: 'speech-2.8-turbo', text: sampleText, voice_setting: { voice_id: voiceId }, audio_setting: { sample_rate: 24000, bitrate: 64000, format: 'mp3', channel: 1 }, language_boost: languageBoost, output_format: 'hex' }),
       });
       if (!res.ok) return;
-      const ct = res.headers.get('content-type') || '';
-      const audioUrl = ct.startsWith('audio/') ? URL.createObjectURL(await res.blob()) : (await res.json()).audio_file;
+      const blob = await res.blob();
+      const audioUrl = URL.createObjectURL(blob);
       if (audioUrl) { const a = new Audio(audioUrl); a.play().catch(() => {}); }
     } catch {} finally { setPreviewLoading(null); }
   }, [settings]);
@@ -96,7 +96,7 @@ export function TextToSpeechPanel() {
           }
         : {}
       ),
-      output_format: 'url' as const, // URL mode respects audio_setting.format
+      output_format: 'hex' as const, // hex mode is more reliable than URL (avoids CDN expiry & format mismatch)
     };
 
     try {
@@ -156,40 +156,18 @@ export function TextToSpeechPanel() {
         if (!res.ok) {
           const errText = await res.text();
           let errMsg = `API error: ${res.status}`;
-          try {
-            const errJson = JSON.parse(errText);
-            errMsg = errJson.error || errMsg;
-          } catch {}
+          try { errMsg = JSON.parse(errText).error || errMsg; } catch {}
           throw new Error(errMsg);
         }
 
-        const contentType = res.headers.get('content-type') || '';
+        // Server always returns binary audio (Content-Type: audio/*)
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
         const fileName = `tts-${Date.now()}.${formatToExtension(tts.audioFormat)}`;
-
-        if (contentType.startsWith('audio/')) {
-          // ── Binary audio response (server converted hex → raw audio) ──
-          const blob = await res.blob();
-          const blobUrl = URL.createObjectURL(blob);
-          player.setAudioUrl(blobUrl);
-          player.setLastGeneratedAudio({ url: blobUrl, format: tts.audioFormat, fileName });
-          // Try to get duration from header if available
-          const durationMs = parseInt(res.headers.get('x-audio-duration') || '0', 10);
-          if (durationMs > 0) player.setDuration(durationMs / 1000);
-        } else {
-          // ── JSON response (CDN URL) ──
-          const data = await res.json();
-
-          if (data.audio_file) {
-            // Set the CDN URL directly — <audio> element doesn't need CORS
-            player.setAudioUrl(data.audio_file);
-            player.setLastGeneratedAudio({ url: data.audio_file, format: tts.audioFormat, fileName });
-            if (data.extra_info?.audio_length) {
-              player.setDuration(data.extra_info.audio_length / 1000);
-            }
-          } else {
-            throw new Error('API 未返回音频数据。请检查 API Key 和音色 ID 是否正确。');
-          }
-        }
+        player.setAudioUrl(blobUrl);
+        player.setLastGeneratedAudio({ url: blobUrl, format: tts.audioFormat, fileName });
+        const durationMs = parseInt(res.headers.get('x-audio-duration') || '0', 10);
+        if (durationMs > 0) player.setDuration(durationMs / 1000);
 
         if (settings.autoPlay) {
           requestAnimationFrame(() => requestAnimationFrame(() => {

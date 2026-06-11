@@ -43,10 +43,11 @@ function buildWav(pcmSamples: Uint8Array, sampleRate: number, numChannels: numbe
 /**
  * POST /api/tts/synthesize
  *
- * Proxy for MiniMax TTS API. Returns:
- *  • CDN URL  → JSON  { audio_file: "https://..." }
- *  • Hex data → binary audio with correct MIME type
- *    PCM is wrapped in a valid WAV container (browsers can't play raw PCM).
+ * Proxy for MiniMax TTS API. Always uses output_format=hex (more reliable
+ * than URL mode — no CDN expiry, no CORS, no HTML error pages).
+ *
+ * Returns binary audio with correct MIME type. PCM is wrapped in a valid
+ * WAV container (browsers can't play raw PCM).
  */
 export async function POST(request: NextRequest) {
   try {
@@ -62,7 +63,7 @@ export async function POST(request: NextRequest) {
     const sampleRate: number = body.audio_setting?.sample_rate || 32000;
     const channels: number = body.audio_setting?.channel || 1;
     const logBody = { ...body, text: (body.text || '').slice(0, 40) };
-    console.log('[synthesize] → MiniMax', JSON.stringify(logBody));
+    console.log('[synthesize] → MiniMax (hex mode)', JSON.stringify(logBody));
 
     const ttsRes = await fetch(`${baseUrl}/v1/t2a_v2`, {
       method: 'POST',
@@ -70,7 +71,8 @@ export async function POST(request: NextRequest) {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ ...body, stream: false }),
+      // Always force hex — self-contained, no CDN expiry, no CORS issues
+      body: JSON.stringify({ ...body, output_format: 'hex', stream: false }),
     });
 
     const ttsText = await ttsRes.text();
@@ -97,63 +99,52 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ── Route 1: CDN URL (the happy path) ────────────────────
-    if (ttsData.audio_file) {
-      console.log('[synthesize] ✓ CDN URL:', String(ttsData.audio_file).slice(0, 100));
-      return NextResponse.json(ttsData);
+    if (!ttsData.data?.audio) {
+      console.error('[synthesize] ✗ No hex data, keys:', Object.keys(ttsData));
+      return NextResponse.json(
+        { error: 'MiniMax returned no audio data.' },
+        { status: 502 }
+      );
     }
 
-    // ── Route 2: Hex data (MiniMax returned data.audio instead of audio_file) ──
-    if (ttsData.data?.audio) {
-      const hex = String(ttsData.data.audio);
-      const hexLen = hex.length;
-      console.log(`[synthesize] Hex data: ${hexLen} chars, fmt=${audioFormat}, sr=${sampleRate}, ch=${channels}`);
+    const hex = String(ttsData.data.audio);
+    console.log(`[synthesize] Hex: ${hex.length / 2} bytes, fmt=${audioFormat}, sr=${sampleRate}`);
 
-      if (hexLen < 200) {
-        console.error('[synthesize] ✗ Hex payload too small — likely MiniMax error');
-        return NextResponse.json(
-          { error: 'MiniMax returned empty audio data.' },
-          { status: 502 }
-        );
-      }
-
-      const rawBytes = hexToBytes(hex);
-      let audioBuffer: Buffer;
-      let mimeType: string;
-
-      if (audioFormat === 'pcm') {
-        // Raw PCM → wrap in WAV container (browsers can't play raw PCM)
-        const wavBuf = buildWav(rawBytes, sampleRate, channels, 16);
-        audioBuffer = Buffer.from(wavBuf);
-        mimeType = 'audio/wav';
-        console.log(`[synthesize] PCM → WAV: ${rawBytes.byteLength} → ${audioBuffer.byteLength} bytes`);
-      } else {
-        // MP3 / FLAC / WAV — hex IS the encoded audio
-        audioBuffer = Buffer.from(rawBytes);
-        mimeType = audioFormat === 'mp3' ? 'audio/mpeg'
-                 : audioFormat === 'flac' ? 'audio/flac'
-                 : 'audio/wav';
-      }
-
-      console.log(`[synthesize] ✓ Binary: ${audioBuffer.byteLength} bytes, ${mimeType}`);
-
-      // NextResponse BodyInit accepts Uint8Array (Buffer extends it but TS strict
-      // types don't always match; cast through Uint8Array for safety).
-      return new NextResponse(new Uint8Array(audioBuffer), {
-        headers: {
-          'Content-Type': mimeType,
-          'Content-Length': String(audioBuffer.byteLength),
-          'X-Audio-Duration': String(ttsData.extra_info?.audio_length || 0),
-          'X-Audio-Format': audioFormat,
-        },
-      });
+    if (hex.length < 200) {
+      console.error('[synthesize] ✗ Hex payload too small');
+      return NextResponse.json(
+        { error: 'MiniMax returned empty audio data.' },
+        { status: 502 }
+      );
     }
 
-    console.error('[synthesize] ✗ No audio data in response, keys:', Object.keys(ttsData));
-    return NextResponse.json(
-      { error: 'MiniMax returned no audio data.' },
-      { status: 502 }
-    );
+    const rawBytes = hexToBytes(hex);
+    let audioBuffer: Buffer;
+    let mimeType: string;
+
+    if (audioFormat === 'pcm') {
+      // Raw PCM → WAV container (browsers can't play bare PCM)
+      const wavBuf = buildWav(rawBytes, sampleRate, channels, 16);
+      audioBuffer = Buffer.from(wavBuf);
+      mimeType = 'audio/wav';
+      console.log(`[synthesize] PCM→WAV: ${rawBytes.byteLength}→${audioBuffer.byteLength}B`);
+    } else {
+      audioBuffer = Buffer.from(rawBytes);
+      mimeType = audioFormat === 'mp3' ? 'audio/mpeg'
+               : audioFormat === 'flac' ? 'audio/flac'
+               : 'audio/wav';
+    }
+
+    console.log(`[synthesize] ✓ ${audioBuffer.byteLength}B ${mimeType}`);
+
+    return new NextResponse(new Uint8Array(audioBuffer), {
+      headers: {
+        'Content-Type': mimeType,
+        'Content-Length': String(audioBuffer.byteLength),
+        'X-Audio-Duration': String(ttsData.extra_info?.audio_length || 0),
+        'X-Audio-Format': audioFormat,
+      },
+    });
   } catch (error) {
     console.error('[synthesize] Exception:', error);
     return NextResponse.json(
