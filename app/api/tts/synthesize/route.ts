@@ -3,10 +3,14 @@ import { NextRequest, NextResponse } from 'next/server';
 /**
  * POST /api/tts/synthesize
  *
- * Transparent proxy: calls MiniMax API, then fetches the CDN audio file
- * server-side and returns the RAW audio bytes with correct Content-Type.
+ * Lightweight proxy: calls MiniMax API and returns the CDN audio URL.
  *
- * The browser receives same-origin binary audio — no CORS, no CDN issues.
+ * We intentionally do NOT download the CDN audio server-side because:
+ *  - Vercel serverless functions have ~4.5 MB response body limits
+ *  - <audio> element playback is NOT subject to CORS — the browser can
+ *    play cross-origin CDN URLs directly without any issue
+ *  - Download is handled by the /api/tts/download proxy (which streams
+ *    CDN → browser and sets Content-Disposition for save-as)
  */
 export async function POST(request: NextRequest) {
   try {
@@ -21,7 +25,6 @@ export async function POST(request: NextRequest) {
     const logBody = { ...body, text: (body.text || '').slice(0, 40) };
     console.log('[synthesize] → MiniMax', JSON.stringify(logBody));
 
-    // Step 1: call MiniMax TTS API
     const ttsRes = await fetch(`${baseUrl}/v1/t2a_v2`, {
       method: 'POST',
       headers: {
@@ -55,67 +58,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const audioFile = ttsData.audio_file;
-    if (!audioFile) {
-      // hex mode fallback — return JSON as-is
-      if (ttsData.data?.audio) {
-        return NextResponse.json(ttsData);
-      }
-      return NextResponse.json({ error: 'No audio in response' }, { status: 502 });
-    }
-
-    console.log('[synthesize] CDN URL:', audioFile.slice(0, 100));
-
-    // Step 2: - download the audio from CDN server-side
-    const audioRes = await fetch(audioFile, {
-      headers: {
-        'Accept': 'audio/mpeg,audio/wav,audio/x-wav,audio/flac,audio/*,*/*',
-      },
-    });
-
-    if (!audioRes.ok) {
-      console.error('[synthesize] CDN download failed:', audioRes.status, audioRes.statusText);
-      // Fallback: return the CDN URL and let client try directly
-      return NextResponse.json({
-        audio_file: audioFile,
-        extra_info: ttsData.extra_info,
-        base_resp: ttsData.base_resp,
-        trace_id: ttsData.trace_id,
-      });
-    }
-
-    const audioBuffer = await audioRes.arrayBuffer();
-    const contentType = audioRes.headers.get('content-type') || 'audio/mpeg';
-
-    console.log('[synthesize] CDN download OK:',
-      audioBuffer.byteLength, 'bytes, type:', contentType);
-
-    // Reject if CDN returned HTML/text instead of audio
-    if (contentType.includes('text/html') || contentType.includes('application/json')) {
-      console.error('[synthesize] CDN returned non-audio content-type:', contentType);
-      return NextResponse.json({
-        audio_file: audioFile,
-        extra_info: ttsData.extra_info,
-        base_resp: ttsData.base_resp,
-        trace_id: ttsData.trace_id,
-        _fallback: true,
-      });
-    }
-
-    // Step 3: return raw audio bytes + metadata via custom headers
-    const res = new NextResponse(audioBuffer, {
-      status: 200,
-      headers: {
-        'Content-Type': contentType,
-        'Content-Length': String(audioBuffer.byteLength),
-        'Cache-Control': 'no-cache',
-        'X-Audio-Duration': String(ttsData.extra_info?.audio_length || ''),
-        'X-Audio-Sample-Rate': String(ttsData.extra_info?.audio_sample_rate || ''),
-        'X-Audio-Format': String(ttsData.extra_info?.audio_format || body.audio_setting?.format || 'mp3'),
-      },
-    });
-
-    return res;
+    // Return the MiniMax response as JSON — the CDN URL will be played
+    // directly by the browser <audio> element (no CORS restrictions).
+    return NextResponse.json(ttsData);
   } catch (error) {
     console.error('[synthesize] Exception:', error);
     return NextResponse.json(

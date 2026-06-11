@@ -127,25 +127,51 @@ export function AudioPlayer() {
     if (!lastAudio) return;
 
     try {
+      // Strategy 1: try direct browser fetch (may work if CDN has CORS headers)
       if (lastAudio.url) {
-        const res = await fetch('/api/tts/download', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: lastAudio.url }),
-        });
-        if (res.ok) {
-          const blob = await res.blob();
-          downloadBlob(blob, lastAudio.fileName);
-          return;
+        try {
+          const directRes = await fetch(lastAudio.url, { mode: 'cors' });
+          if (directRes.ok) {
+            const blob = await directRes.blob();
+            downloadBlob(blob, lastAudio.fileName);
+            return;
+          }
+        } catch {
+          // CORS blocked — fall through to proxy
         }
       }
+
+      // Strategy 2: proxy through server (works around CORS but may hit body size limits on serverless)
+      if (lastAudio.url) {
+        try {
+          const res = await fetch('/api/tts/download', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: lastAudio.url }),
+          });
+          if (res.ok) {
+            const blob = await res.blob();
+            downloadBlob(blob, lastAudio.fileName);
+            return;
+          }
+        } catch {
+          // Proxy failed — fall through
+        }
+      }
+
+      // Strategy 3: hex data → local blob
       if (lastAudio.hex) {
         const blob = hexAudioToBlob(lastAudio.hex, lastAudio.format);
         downloadBlob(blob, lastAudio.fileName);
-      } else if (lastAudio.url) {
+        return;
+      }
+
+      // Strategy 4: open CDN URL in new tab (browser will play/download)
+      if (lastAudio.url) {
         window.open(lastAudio.url, '_blank');
       }
     } catch {
+      // Last resort
       if (lastAudio.url) window.open(lastAudio.url, '_blank');
     }
   };

@@ -140,6 +140,9 @@ export function TextToSpeechPanel() {
         );
       } else {
         // -------- SYNCHRONOUS PATH --------
+        // API returns MiniMax JSON response containing audio_file (CDN URL)
+        // The CDN URL is set directly on <audio>.src — native audio playback
+        // has NO CORS restrictions, so cross-origin CDN URLs work perfectly.
         const res = await fetch('/api/tts/synthesize', {
           method: 'POST',
           headers: {
@@ -155,70 +158,35 @@ export function TextToSpeechPanel() {
           throw new Error(err.error || `API error: ${res.status}`);
         }
 
-        const resContentType = res.headers.get('content-type') || '';
+        const data = await res.json();
 
-        if (resContentType.startsWith('audio/')) {
-          // ── Server returned raw audio bytes (proxied CDN download) ──
-          const audioBlob = await res.blob();
-          const actualType = resContentType;
-          const actualExt = actualType.includes('wav') ? 'wav'
-            : actualType.includes('flac') ? 'flac'
-            : actualType.includes('mpeg') ? 'mp3'
-            : formatToExtension(tts.audioFormat);
-          const fileName = `tts-${Date.now()}.${actualExt}`;
-
-          // Parse metadata from custom headers
-          const audioLength = res.headers.get('X-Audio-Duration');
-
-          const blobUrl = URL.createObjectURL(audioBlob);
-          player.setAudioUrl(blobUrl);
-          player.setLastGeneratedAudio({
-            url: blobUrl,
-            format: tts.audioFormat,
-            fileName,
-          });
-
-          if (audioLength) {
-            player.setDuration(Number(audioLength) / 1000);
+        if (data.audio_file) {
+          // Set the CDN URL directly — <audio> element doesn't need CORS
+          const fileName = `tts-${Date.now()}.${formatToExtension(tts.audioFormat)}`;
+          player.setAudioUrl(data.audio_file);
+          player.setLastGeneratedAudio({ url: data.audio_file, format: tts.audioFormat, fileName });
+          if (data.extra_info?.audio_length) {
+            player.setDuration(data.extra_info.audio_length / 1000);
           }
-
           if (settings.autoPlay) {
-            requestAnimationFrame(() => {
-              requestAnimationFrame(() => {
-                (window as any).__audioPlayerPlay?.();
-              });
-            });
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+              (window as any).__audioPlayerPlay?.();
+            }));
+          }
+        } else if (data.data?.audio) {
+          // hex data fallback
+          const blob = hexAudioToBlob(data.data.audio, tts.audioFormat, tts.sampleRate);
+          const blobUrl = URL.createObjectURL(blob);
+          const fileName = `tts-${Date.now()}.${formatToExtension(tts.audioFormat)}`;
+          player.setAudioUrl(blobUrl);
+          player.setLastGeneratedAudio({ hex: data.data.audio, format: tts.audioFormat, fileName });
+          if (settings.autoPlay) {
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+              (window as any).__audioPlayerPlay?.();
+            }));
           }
         } else {
-          // ── JSON response (fallback: CDN URL or hex data) ──
-          const data = await res.json();
-
-          if (data.audio_file) {
-            const fileName = `tts-${Date.now()}.${formatToExtension(tts.audioFormat)}`;
-            player.setAudioUrl(data.audio_file);
-            player.setLastGeneratedAudio({ url: data.audio_file, format: tts.audioFormat, fileName });
-            if (data.extra_info?.audio_length) {
-              player.setDuration(data.extra_info.audio_length / 1000);
-            }
-            if (settings.autoPlay) {
-              requestAnimationFrame(() => requestAnimationFrame(() => {
-                (window as any).__audioPlayerPlay?.();
-              }));
-            }
-          } else if (data.data?.audio) {
-            const blob = hexAudioToBlob(data.data.audio, tts.audioFormat, tts.sampleRate);
-            const blobUrl = URL.createObjectURL(blob);
-            const fileName = `tts-${Date.now()}.${formatToExtension(tts.audioFormat)}`;
-            player.setAudioUrl(blobUrl);
-            player.setLastGeneratedAudio({ hex: data.data.audio, format: tts.audioFormat, fileName });
-            if (settings.autoPlay) {
-              requestAnimationFrame(() => requestAnimationFrame(() => {
-                (window as any).__audioPlayerPlay?.();
-              }));
-            }
-          } else {
-            throw new Error('API 未返回音频数据。请检查 API Key 和音色 ID 是否正确。');
-          }
+          throw new Error('API 未返回音频数据。请检查 API Key 和音色 ID 是否正确。');
         }
 
         player.setLoading(false);
