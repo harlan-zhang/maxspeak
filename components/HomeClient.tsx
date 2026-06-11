@@ -6,44 +6,47 @@ import { VoiceDesignPanel } from '@/components/design/VoiceDesignPanel';
 import { VoiceLibrary } from '@/components/library/VoiceLibrary';
 import { useSettingsStore } from '@/lib/store/useSettingsStore';
 import { useNavStore } from '@/lib/store/useNavStore';
-import { Settings } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { AlertCircle, Settings, ArrowRight } from 'lucide-react';
 
 export function HomeClient() {
   const activeTab = useNavStore((s) => s.activeTab);
   const apiKey = useSettingsStore((s) => s.apiKey);
 
-  if (!apiKey) {
-    return (
-      <div className="flex items-center justify-center h-full min-h-[60vh]">
-        <div className="text-center max-w-sm">
-          <div className="w-16 h-16 rounded-2xl bg-violet-100 dark:bg-violet-500/10
-                          flex items-center justify-center mx-auto mb-5">
-            <Settings size={28} className="text-violet-500" />
-          </div>
-          <h2 className="text-xl font-bold text-[rgb(var(--foreground))] tracking-tight mb-2">
-            Welcome to MaxSpeak
-          </h2>
-          <p className="text-sm text-[rgb(var(--muted-foreground))] leading-relaxed mb-4">
-            AI Text to Speech Studio powered by MiniMax API.
-            <br />
-            Clone voices, design new ones, or pick from 300+ preset voices.
-          </p>
-          <p className="text-xs text-[rgb(var(--muted-foreground))]/50 leading-relaxed">
-            Get your API key at{' '}
-            <a href="https://platform.minimax.io" target="_blank" rel="noopener noreferrer"
-               className="text-violet-500 hover:underline font-medium">
-              platform.minimax.io
-            </a>
-            {' '}and click the settings icon in the top-right corner.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-col h-full">
+      {/* ─── API Key warning banner ─── */}
+      {!apiKey && (
+        <div className="flex items-center justify-between gap-3 px-4 py-2.5
+                        bg-amber-50 dark:bg-amber-500/8
+                        border-b border-amber-200 dark:border-amber-500/20">
+          <div className="flex items-center gap-2 text-sm text-amber-800 dark:text-amber-300">
+            <AlertCircle size={16} className="flex-shrink-0" />
+            <span>未设置 API Key，无法合成语音。</span>
+            <span className="hidden sm:inline text-amber-600 dark:text-amber-400 text-xs">
+              前往 <a href="https://platform.minimax.io" target="_blank"
+                       rel="noopener noreferrer"
+                       className="underline hover:no-underline font-medium">
+                platform.minimax.io
+              </a> 获取 MiniMax API Key
+            </span>
+          </div>
+          <button
+            onClick={() => (document.querySelector('[title="设置"]') as HTMLButtonElement)?.click()}
+            className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium
+                       bg-amber-200 dark:bg-amber-500/20
+                       text-amber-800 dark:text-amber-300
+                       hover:bg-amber-300 dark:hover:bg-amber-500/30
+                       transition-colors flex-shrink-0"
+          >
+            <Settings size={13} />
+            打开设置
+            <ArrowRight size={12} />
+          </button>
+        </div>
+      )}
+
+      {/* ─── Tab content ─── */}
       <div className="flex-1 overflow-y-auto scrollbar-thin">
         <AnimatePresence mode="wait">
           <motion.div
