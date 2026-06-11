@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useSettingsStore } from '@/lib/store/useSettingsStore';
 import { Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import type { DesignedVoice } from '@/lib/minimax/types';
 
 function hexToAudioUrl(hex: string): string {
   const bytes = new Uint8Array(hex.length / 2);

@@ -423,10 +423,11 @@ export function VoiceLibrary() {
                       <button
                         onClick={() => {
                           try {
+                            const audio = voice.trialAudio!;
                             // trial_audio is hex-encoded MP3
-                            const bytes = new Uint8Array(voice.trialAudio.length / 2);
-                            for (let i = 0; i < voice.trialAudio.length; i += 2) {
-                              bytes[i / 2] = parseInt(voice.trialAudio.substring(i, i + 2), 16);
+                            const bytes = new Uint8Array(audio.length / 2);
+                            for (let i = 0; i < audio.length; i += 2) {
+                              bytes[i / 2] = parseInt(audio.substring(i, i + 2), 16);
                             }
                             const blob = new Blob([bytes.buffer], { type: 'audio/mpeg' });
                             const url = URL.createObjectURL(blob);
