@@ -33,9 +33,8 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
       {/* Logo */}
       <div className="flex items-center h-14 px-4 border-b border-[rgb(var(--border))]">
         <button onClick={onToggle} className="flex items-center gap-3 w-full text-left">
-          <div className="w-8 h-8 rounded-xl bg-violet-600 flex items-center justify-center flex-shrink-0
-                          shadow-sm shadow-violet-500/20">
-            <span className="text-white font-bold text-[13px] leading-none">T</span>
+          <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden">
+            <img src="/logo.webp" alt="MaxSpeak" className="w-full h-full object-contain" />
           </div>
           {isOpen && (
             <div className="overflow-hidden min-w-0">
