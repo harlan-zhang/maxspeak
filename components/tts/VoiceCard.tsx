@@ -23,7 +23,7 @@ export function VoiceCard({ voice, isSelected, onSelect, onPreview, previewLoadi
       className={cn(
         'w-full text-left px-2.5 py-2 rounded-lg transition-all duration-150 text-sm group cursor-pointer',
         isSelected
-          ? 'bg-violet-50 dark:bg-violet-500/10 ring-1 ring-violet-300 dark:ring-violet-700'
+          ? 'bg-violet-50 dark:bg-violet-500/10 border border-violet-300 dark:border-violet-700'
           : 'hover:bg-[rgb(var(--muted))]'
       )}
     >
