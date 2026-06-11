@@ -1,14 +1,11 @@
 import { HomeClient } from '@/components/HomeClient';
-import { Github } from 'lucide-react';
 
 /**
  * SEO Landing Page — server-rendered for crawlers.
  *
- * This is the HTML that Google, Bing, Baidu etc. see when they index the site.
- * The actual interactive dashboard is rendered client-side via HomeClient.
+ * The sr-only section provides rich keyword content for Google, Bing, Baidu etc.
+ * The interactive dashboard is rendered client-side via HomeClient.
  */
-
-const GITHUB_URL = 'https://github.com/harlan-zhang/maxspeak';
 
 export default function Page() {
   return (
@@ -49,24 +46,6 @@ export default function Page() {
           MIT 开源，免费使用。
         </p>
       </div>
-
-      {/* ─── GitHub link — fixed bottom-left ─── */}
-      <a
-        href={GITHUB_URL}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="fixed bottom-4 left-4 z-50 flex items-center gap-2 px-3 py-2
-                   rounded-full bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm
-                   border border-slate-200 dark:border-slate-700
-                   shadow-lg shadow-slate-200/50 dark:shadow-slate-900/50
-                   text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white
-                   transition-all duration-200 hover:shadow-xl hover:scale-105
-                   text-xs font-medium"
-        title="View source on GitHub"
-      >
-        <Github size={16} />
-        <span className="hidden sm:inline">GitHub</span>
-      </a>
 
       {/* ─── Interactive dashboard (client component) ─── */}
       <HomeClient />

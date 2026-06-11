@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { SettingsPanel } from '@/components/settings/SettingsPanel';
 import { useSettingsStore } from '@/lib/store/useSettingsStore';
 import { cn } from '@/lib/utils';
-import { PanelLeftClose, PanelLeftOpen, Settings, Circle } from 'lucide-react';
+import { PanelLeftClose, PanelLeftOpen, Settings, Circle, Github } from 'lucide-react';
 
 interface HeaderProps {
   onToggleSidebar: () => void;
@@ -38,6 +38,20 @@ export function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
 
         <div className="flex items-center gap-3">
           {/* API Key Status */}
+          <a
+            href="https://github.com/harlan-zhang/maxspeak"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium
+                       bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400
+                       hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-700
+                       transition-colors"
+            title="GitHub"
+          >
+            <Github size={13} />
+            <span className="hidden sm:inline">GitHub</span>
+          </a>
+
           <div className={cn(
             'flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium',
             apiKey
