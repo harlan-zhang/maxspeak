@@ -5,6 +5,7 @@ import { TextInput } from './TextInput';
 import { VoiceSelector } from './VoiceSelector';
 import { ModelSelector } from './ModelSelector';
 import { EmotionTags } from './EmotionTags';
+import { PauseTagInserter } from './PauseTagInserter';
 import { ParalinguisticTagInserter } from './ParalinguisticTagInserter';
 import { SpeedPitchControls } from './SpeedPitchControls';
 import { VoiceModifyControls } from './VoiceModifyControls';
@@ -225,6 +226,8 @@ export function TextToSpeechPanel() {
         {/* Left: Text Input & Core Controls */}
         <div className="lg:col-span-2 space-y-4">
           <TextInput />
+
+          <PauseTagInserter />
 
           {/* Paralinguistic Tags */}
           <ParalinguisticTagInserter />
