@@ -21,7 +21,7 @@ export function TextInput() {
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder="请输入需要合成语音的文本...&#10;&#10;支持副语言标签，例如：&#10;Omg(sighs), the real danger is not that computers start thinking like people..."
+        placeholder="请输入需要合成语音的文本...&#10;&#10;支持停顿标签和副语言标签，例如：&#10;第一句结束。<#0.5#>第二句开始。&#10;Omg(sighs), the real danger is not that computers start thinking like people..."
         rows={6}
         className={`input-field resize-none font-sans ${isOverLimit ? 'border-red-500 focus:ring-red-500' : ''}`}
       />
