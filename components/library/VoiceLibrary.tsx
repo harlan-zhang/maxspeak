@@ -4,10 +4,129 @@ import { useState, useMemo, useCallback, useRef } from 'react';
 import { PRESET_VOICES, VOICE_LANGUAGES, filterVoices, groupVoicesByLanguage } from '@/lib/voices/preset-voices';
 import { useSettingsStore } from '@/lib/store/useSettingsStore';
 import { useTTSStore } from '@/lib/store/useTTSStore';
+import type { ClonedVoice, DesignedVoice } from '@/lib/minimax/types';
 import { cn } from '@/lib/utils';
-import { Search, Library, RefreshCw } from 'lucide-react';
+import { Library } from 'lucide-react';
 
 type VoiceSource = 'system' | 'cloned' | 'designed';
+const CUSTOM_VOICES_UPDATED_EVENT = 'tts-custom-voices-updated';
+
+type SyncedVoice = {
+  voice_id?: string;
+  voice_name?: string;
+  voice_type?: string;
+  description?: string | string[];
+  demo_audio?: string;
+  trial_audio?: string;
+  create_time?: number | string;
+  created_time?: number | string;
+  file_id?: number;
+  prompt?: string;
+  preview_text?: string;
+  text?: string;
+};
+
+function readStoredVoices<T>(key: string): T[] {
+  if (typeof window === 'undefined') return [];
+
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredVoices<T>(key: string, voices: T[]) {
+  localStorage.setItem(key, JSON.stringify(voices));
+  window.dispatchEvent(new Event(CUSTOM_VOICES_UPDATED_EVENT));
+}
+
+function isSyncedVoice(value: unknown): value is SyncedVoice {
+  return typeof value === 'object' && value !== null;
+}
+
+function asSyncedVoices(value: unknown): SyncedVoice[] {
+  return Array.isArray(value) ? value.filter(isSyncedVoice) : [];
+}
+
+function getVoicesByType(data: unknown, type: 'voice_cloning' | 'voice_generation'): SyncedVoice[] {
+  if (typeof data !== 'object' || data === null) return [];
+
+  const response = data as Record<string, unknown>;
+  const grouped = asSyncedVoices(response[type]);
+  if (grouped.length > 0) return grouped;
+
+  return asSyncedVoices(response.voice_list).filter((voice) => voice.voice_type === type);
+}
+
+function getDescriptionText(voice: SyncedVoice): string {
+  if (Array.isArray(voice.description)) {
+    return voice.description.filter(Boolean).join(' / ');
+  }
+
+  return voice.description || '';
+}
+
+function getCreatedAt(voice: SyncedVoice): number {
+  const raw = voice.create_time ?? voice.created_time;
+
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return raw > 1_000_000_000_000 ? raw : raw * 1000;
+  }
+
+  if (typeof raw === 'string' && raw.trim()) {
+    const parsed = Date.parse(raw);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+
+  return Date.now();
+}
+
+function toClonedVoice(voice: SyncedVoice): ClonedVoice | null {
+  const voiceId = voice.voice_id?.trim();
+  if (!voiceId) return null;
+
+  const description = getDescriptionText(voice);
+
+  return {
+    voiceId,
+    name: voice.voice_name || description || voiceId,
+    createdAt: getCreatedAt(voice),
+    demoAudio: voice.demo_audio,
+    fileId: voice.file_id ?? 0,
+  };
+}
+
+function toDesignedVoice(voice: SyncedVoice): DesignedVoice | null {
+  const voiceId = voice.voice_id?.trim();
+  if (!voiceId) return null;
+
+  return {
+    voiceId,
+    prompt: voice.prompt || getDescriptionText(voice) || voice.voice_name || 'API 同步的设计音色',
+    previewText: voice.preview_text || voice.text || '',
+    createdAt: getCreatedAt(voice),
+    trialAudio: voice.trial_audio,
+  };
+}
+
+function mergeVoicesById<T extends { voiceId: string }>(current: T[], synced: T[]): T[] {
+  const currentIds = new Set<string>();
+  const currentUnique = current.filter((voice) => {
+    if (!voice.voiceId || currentIds.has(voice.voiceId)) return false;
+    currentIds.add(voice.voiceId);
+    return true;
+  });
+
+  const newSynced = synced.filter((voice) => {
+    if (!voice.voiceId || currentIds.has(voice.voiceId)) return false;
+    currentIds.add(voice.voiceId);
+    return true;
+  });
+
+  return [...newSynced, ...currentUnique];
+}
 
 export function VoiceLibrary() {
   const settings = useSettingsStore();
@@ -20,17 +139,18 @@ export function VoiceLibrary() {
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
   // Load custom voices
-  const clonedVoices = useMemo(() => {
-    if (typeof window === 'undefined') return [];
-    try { return JSON.parse(localStorage.getItem('tts-cloned-voices') || '[]'); }
-    catch { return []; }
-  }, []);
+  const [clonedVoices, setClonedVoices] = useState<ClonedVoice[]>(() => readStoredVoices('tts-cloned-voices'));
+  const [designedVoices, setDesignedVoices] = useState<DesignedVoice[]>(() => readStoredVoices('tts-designed-voices'));
 
-  const designedVoices = useMemo(() => {
-    if (typeof window === 'undefined') return [];
-    try { return JSON.parse(localStorage.getItem('tts-designed-voices') || '[]'); }
-    catch { return []; }
-  }, []);
+  const saveClonedVoices = (voices: ClonedVoice[]) => {
+    setClonedVoices(voices);
+    writeStoredVoices('tts-cloned-voices', voices);
+  };
+
+  const saveDesignedVoices = (voices: DesignedVoice[]) => {
+    setDesignedVoices(voices);
+    writeStoredVoices('tts-designed-voices', voices);
+  };
 
   // Filter system voices
   const filteredSystem = useMemo(
@@ -58,7 +178,7 @@ export function VoiceLibrary() {
           'x-api-key': settings.apiKey,
           ...(settings.baseUrl !== 'https://api.minimax.io' ? { 'x-base-url': settings.baseUrl } : {}),
         },
-        body: JSON.stringify({ voice_type: 'all', page_size: 500 }),
+        body: JSON.stringify({ voice_type: 'all' }),
       });
 
       if (!res.ok) {
@@ -67,7 +187,22 @@ export function VoiceLibrary() {
 
       const data = await res.json();
       const count = data.voice_list?.length || 0;
-      setSyncMessage(`✅ 成功获取 ${count} 个音色（系统 + 自定义）。已合并到本地库。`);
+      const syncedCloned = getVoicesByType(data, 'voice_cloning')
+        .map(toClonedVoice)
+        .filter((voice): voice is ClonedVoice => voice !== null);
+      const syncedDesigned = getVoicesByType(data, 'voice_generation')
+        .map(toDesignedVoice)
+        .filter((voice): voice is DesignedVoice => voice !== null);
+
+      const clonedBefore = new Set(clonedVoices.map((voice) => voice.voiceId));
+      const designedBefore = new Set(designedVoices.map((voice) => voice.voiceId));
+      const addedCloned = syncedCloned.filter((voice) => !clonedBefore.has(voice.voiceId)).length;
+      const addedDesigned = syncedDesigned.filter((voice) => !designedBefore.has(voice.voiceId)).length;
+
+      saveClonedVoices(mergeVoicesById(clonedVoices, syncedCloned));
+      saveDesignedVoices(mergeVoicesById(designedVoices, syncedDesigned));
+
+      setSyncMessage(`✅ 成功获取 ${count} 个音色，已保存复刻音色 ${syncedCloned.length} 个、设计音色 ${syncedDesigned.length} 个（新增 ${addedCloned + addedDesigned} 个）。`);
     } catch (err) {
       setSyncMessage(`❌ 同步失败: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
