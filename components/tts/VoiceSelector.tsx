@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useTTSStore } from '@/lib/store/useTTSStore';
 import { PRESET_VOICES, VOICE_LANGUAGES, filterVoices } from '@/lib/voices/preset-voices';
 import { VoiceCard } from './VoiceCard';
+import type { ClonedVoice, DesignedVoice, PresetVoice } from '@/lib/minimax/types';
 import { Search } from 'lucide-react';
 import { User, UserRound, Bot } from 'lucide-react';
 
@@ -12,19 +13,80 @@ interface Props {
   previewLoading?: string | null;
 }
 
+const CUSTOM_VOICES_UPDATED_EVENT = 'tts-custom-voices-updated';
+
+function readStoredVoices<T>(key: string): T[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function loadCustomVoices(): PresetVoice[] {
+  if (typeof window === 'undefined') return [];
+
+  const clonedVoices = readStoredVoices<ClonedVoice>('tts-cloned-voices').map((voice) => ({
+    id: voice.voiceId,
+    name: voice.name || voice.voiceId,
+    language: 'Custom',
+    languageLabel: '复刻音色',
+    gender: 'neutral' as const,
+    description: voice.voiceId,
+    tags: ['cloned', 'custom'],
+  }));
+
+  const designedVoices = readStoredVoices<DesignedVoice>('tts-designed-voices').map((voice) => ({
+    id: voice.voiceId,
+    name: voice.prompt || voice.voiceId,
+    language: 'Custom',
+    languageLabel: '设计音色',
+    gender: 'neutral' as const,
+    description: voice.voiceId,
+    tags: ['designed', 'custom'],
+  }));
+
+  const seen = new Set<string>();
+  return [...clonedVoices, ...designedVoices].filter((voice) => {
+    if (!voice.id || seen.has(voice.id)) return false;
+    seen.add(voice.id);
+    return true;
+  });
+}
+
 export function VoiceSelector({ onPreviewVoice, previewLoading }: Props) {
   const voiceId = useTTSStore((s) => s.voiceId);
   const setVoiceId = useTTSStore((s) => s.setVoiceId);
   const [search, setSearch] = useState('');
   const [language, setLanguage] = useState<string>('');
   const [gender, setGender] = useState<string>('');
+  const [customVoices, setCustomVoices] = useState<PresetVoice[]>([]);
 
-  const filtered = useMemo(
-    () => filterVoices(PRESET_VOICES, language || undefined, search || undefined, gender || undefined),
-    [language, search, gender]
+  useEffect(() => {
+    const refreshCustomVoices = () => setCustomVoices(loadCustomVoices());
+
+    refreshCustomVoices();
+    window.addEventListener('storage', refreshCustomVoices);
+    window.addEventListener(CUSTOM_VOICES_UPDATED_EVENT, refreshCustomVoices);
+
+    return () => {
+      window.removeEventListener('storage', refreshCustomVoices);
+      window.removeEventListener(CUSTOM_VOICES_UPDATED_EVENT, refreshCustomVoices);
+    };
+  }, []);
+
+  const allVoices = useMemo(
+    () => [...customVoices, ...PRESET_VOICES],
+    [customVoices]
   );
 
-  const selectedVoice = PRESET_VOICES.find(v => v.id === voiceId);
+  const filtered = useMemo(
+    () => filterVoices(allVoices, language || undefined, search || undefined, gender || undefined),
+    [allVoices, language, search, gender]
+  );
+
+  const selectedVoice = allVoices.find(v => v.id === voiceId);
 
   return (
     <div className="card p-3">
@@ -61,6 +123,7 @@ export function VoiceSelector({ onPreviewVoice, previewLoading }: Props) {
           className="input-field text-xs py-1 flex-1"
         >
           <option value="">全部语言</option>
+          {customVoices.length > 0 && <option value="Custom">自定义音色</option>}
           {VOICE_LANGUAGES.map(l => (
             <option key={l.code} value={l.code}>{l.label}</option>
           ))}
