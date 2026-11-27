@@ -1,13 +1,18 @@
 'use client';
 
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { PRESET_VOICES, VOICE_LANGUAGES, filterVoices, groupVoicesByLanguage } from '@/lib/voices/preset-voices';
 import { useSettingsStore } from '@/lib/store/useSettingsStore';
 import { useTTSStore } from '@/lib/store/useTTSStore';
+import type { PresetVoice } from '@/lib/minimax/types';
+import { customVoicesFromList, getVoiceStorageKey, hasLegacyVoiceCatalog, saveSyncedVoices } from '@/lib/voices/custom-voices';
+import { useVoiceCatalog } from '@/lib/voices/useVoiceCatalog';
+import { voiceDescription, voiceText, type VoiceListEntry } from '@/lib/voices/voice-list';
 import { cn } from '@/lib/utils';
-import { Search, Library, RefreshCw } from 'lucide-react';
+import { Library } from 'lucide-react';
 
 type VoiceSource = 'system' | 'cloned' | 'designed';
+const PRESET_VOICE_IDS = new Set(PRESET_VOICES.map((voice) => voice.id));
 
 export function VoiceLibrary() {
   const settings = useSettingsStore();
@@ -18,27 +23,28 @@ export function VoiceLibrary() {
   const [source, setSource] = useState<VoiceSource>('system');
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
-  const [syncedVoices, setSyncedVoices] = useState<any[]>([]);
-  const [hasSynced, setHasSynced] = useState(false);
+  const [syncedSystem, setSyncedSystem] = useState<PresetVoice[]>([]);
+  const [legacyAvailable, setLegacyAvailable] = useState(false);
+  const [restoreLegacy, setRestoreLegacy] = useState(false);
+  const { catalog: { cloned: clonedVoices, designed: designedVoices }, storageError } = useVoiceCatalog();
+  const syncFeedback = syncMessage ?? storageError;
 
-  // Load custom voices
-  const clonedVoices = useMemo(() => {
-    if (typeof window === 'undefined') return [];
-    try { return JSON.parse(localStorage.getItem('tts-cloned-voices') || '[]'); }
-    catch { return []; }
-  }, []);
+  useEffect(() => {
+    if (!settings.apiKey || storageError) return;
+    try {
+      setLegacyAvailable(hasLegacyVoiceCatalog());
+    } catch (error) {
+      console.warn('无法检查旧版本地音色', error);
+    }
+  }, [settings.apiKey, storageError]);
 
-  const designedVoices = useMemo(() => {
-    if (typeof window === 'undefined') return [];
-    try { return JSON.parse(localStorage.getItem('tts-designed-voices') || '[]'); }
-    catch { return []; }
-  }, []);
+  useEffect(() => {
+    if (!syncMessage) return;
+    const timer = setTimeout(() => setSyncMessage(null), 5000);
+    return () => clearTimeout(timer);
+  }, [syncMessage]);
 
-  // Filter system voices (merge preset + synced from API)
-  const allSystemVoices = useMemo(
-    () => hasSynced ? [...PRESET_VOICES, ...syncedVoices] : PRESET_VOICES,
-    [hasSynced, syncedVoices]
-  );
+  const allSystemVoices = useMemo(() => [...PRESET_VOICES, ...syncedSystem], [syncedSystem]);
   const filteredSystem = useMemo(
     () => filterVoices(allSystemVoices, language || undefined, search || undefined, gender || undefined),
     [allSystemVoices, language, search, gender]
@@ -55,6 +61,7 @@ export function VoiceLibrary() {
 
     setIsSyncing(true);
     setSyncMessage(null);
+    let systemUpdated = false;
 
     try {
       const res = await fetch('/api/voices/list', {
@@ -64,35 +71,46 @@ export function VoiceLibrary() {
           'x-api-key': settings.apiKey,
           ...(settings.baseUrl !== 'https://api.minimax.io' ? { 'x-base-url': settings.baseUrl } : {}),
         },
-        body: JSON.stringify({ voice_type: 'all', page_size: 500 }),
+        body: JSON.stringify({ voice_type: 'all' }),
       });
 
+      const data = await res.json();
       if (!res.ok) {
-        throw new Error('Failed to fetch voices');
+        throw new Error(voiceText(data?.error) ?? `无法获取音色列表（HTTP ${res.status}）`);
       }
 
-      const data = await res.json();
-      const rawVoices: any[] = data.voice_list || [];
-      // Convert MiniMax API voice format to PresetVoice format
-      const converted = rawVoices.map((v: any) => ({
-        id: String(v.voice_id || ''),
-        name: String(v.voice_name || v.voice_id || ''),
-        language: String(v.language || 'Unknown'),
-        languageLabel: String(v.language || 'Unknown'),
-        gender: (v.gender || 'neutral') as 'male' | 'female' | 'neutral',
-        description: typeof v.description === 'string' ? v.description : '',
-        tags: v.voice_type === 'voice_cloning' ? ['复刻'] : v.voice_type === 'voice_generation' ? ['设计'] : ['系统'],
-        demoAudio: typeof v.demo_audio === 'string' ? v.demo_audio : undefined,
-        voiceType: v.voice_type,
-      }));
-      setSyncedVoices(converted);
-      setHasSynced(true);
-      setSyncMessage(`✅ 成功获取 ${converted.length} 个音色（系统 + 自定义）。已合并到本地库。`);
+      if (settings.voiceAccountRevision !== useSettingsStore.getState().voiceAccountRevision) return;
+      const voices: VoiceListEntry[] = data.voice_list;
+      const customVoices = customVoicesFromList(voices);
+      const systemVoices = voices.filter((voice) => voice.voice_type === 'system');
+      const additionalSystemVoices = systemVoices
+        .filter((voice) => !PRESET_VOICE_IDS.has(voice.voice_id))
+        .map((voice): PresetVoice => {
+          const language = voiceText(voice.language) ?? 'Unknown';
+          return {
+            id: voice.voice_id,
+            name: voiceText(voice.voice_name) ?? voice.voice_id,
+            language,
+            languageLabel: language,
+            gender: voice.gender === 'male' || voice.gender === 'female' ? voice.gender : 'neutral',
+            description: voiceDescription(voice.description),
+          };
+        });
+      setSyncedSystem(additionalSystemVoices);
+      systemUpdated = true;
+
+      if (customVoices.cloned.length || customVoices.designed.length) {
+        const storageKey = await getVoiceStorageKey(settings);
+        if (settings.voiceAccountRevision !== useSettingsStore.getState().voiceAccountRevision) return;
+        await saveSyncedVoices(storageKey, customVoices, restoreLegacy);
+      }
+      setRestoreLegacy(false);
+      setSyncMessage(`✅ 同步完成：系统音色 ${systemVoices.length} 个，已保存复刻音色 ${customVoices.cloned.length} 个、设计音色 ${customVoices.designed.length} 个。`);
     } catch (err) {
-      setSyncMessage(`❌ 同步失败: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      const context = systemUpdated ? '系统音色已更新，保存自定义音色失败' : '同步失败';
+      setSyncMessage(`❌ ${context}：${err instanceof Error ? err.message : '未知错误'}`);
     } finally {
       setIsSyncing(false);
-      setTimeout(() => setSyncMessage(null), 5000);
     }
   };
 
@@ -243,12 +261,19 @@ export function VoiceLibrary() {
         </button>
       </div>
 
-      {syncMessage && (
+      {legacyAvailable && (
+        <label className="mb-4 flex items-center gap-2 text-xs text-[rgb(var(--muted-foreground))]">
+          <input type="checkbox" checked={restoreLegacy} disabled={isSyncing} onChange={(event) => setRestoreLegacy(event.target.checked)} />
+          同步时恢复旧版试听和提示词（请使用原 MiniMax 账号）
+        </label>
+      )}
+
+      {syncFeedback && (
         <div className={cn(
           'mb-4 p-3 rounded-lg text-sm',
-          syncMessage.startsWith('✅') ? 'bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300' : 'bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300'
+          syncFeedback.startsWith('✅') ? 'bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300' : 'bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300'
         )}>
-          {syncMessage}
+          {syncFeedback}
         </div>
       )}
 
@@ -346,7 +371,7 @@ export function VoiceLibrary() {
                         ▶ 试听
                       </button>
                       <button
-                        onClick={() => setVoiceId(voice.id)}
+                        onClick={() => setVoiceId(voice.id, !PRESET_VOICE_IDS.has(voice.id))}
                         className="flex-1 text-[10px] py-1 rounded-md bg-primary-50 dark:bg-primary-950 hover:bg-primary-100 dark:hover:bg-primary-900 text-primary-600 transition-colors"
                       >
                         使用
@@ -378,14 +403,16 @@ export function VoiceLibrary() {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-              {clonedVoices.map((voice: { voiceId: string; name: string; createdAt: number; demoAudio?: string; fileId: number }) => (
+              {clonedVoices.map((voice) => (
                 <div key={voice.voiceId} className="card p-3">
                   <div className="font-mono text-sm font-medium text-[rgb(var(--foreground))] truncate">
                     {voice.voiceId}
                   </div>
-                  <div className="text-xs text-[rgb(var(--muted-foreground))] mt-1">
-                    {new Date(voice.createdAt).toLocaleString('zh-CN')}
-                  </div>
+                  {voice.createdAt !== undefined && (
+                    <div className="text-xs text-[rgb(var(--muted-foreground))] mt-1">
+                      {new Date(voice.createdAt).toLocaleString('zh-CN')}
+                    </div>
+                  )}
                   <div className="flex gap-1 mt-2 pt-2 border-t border-[rgb(var(--border))]">
                     {voice.demoAudio && (
                       <button
@@ -401,7 +428,7 @@ export function VoiceLibrary() {
                       </button>
                     )}
                     <button
-                      onClick={() => setVoiceId(voice.voiceId)}
+                      onClick={() => setVoiceId(voice.voiceId, true)}
                       className="flex-1 text-[10px] py-1 rounded-md bg-primary-50 dark:bg-primary-950 hover:bg-primary-100 dark:hover:bg-primary-900 text-primary-600 transition-colors"
                     >
                       使用
@@ -427,7 +454,7 @@ export function VoiceLibrary() {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-              {designedVoices.map((voice: { voiceId: string; prompt: string; previewText: string; createdAt: number; trialAudio?: string }) => (
+              {designedVoices.map((voice) => (
                 <div key={voice.voiceId} className="card p-3">
                   <div className="font-mono text-sm font-medium text-[rgb(var(--foreground))] truncate">
                     {voice.voiceId}
@@ -435,9 +462,11 @@ export function VoiceLibrary() {
                   <p className="text-xs text-[rgb(var(--muted-foreground))] mt-1 line-clamp-2">
                     {voice.prompt}
                   </p>
-                  <div className="text-[10px] text-[rgb(var(--muted-foreground))] mt-1">
-                    {new Date(voice.createdAt).toLocaleString('zh-CN')}
-                  </div>
+                  {voice.createdAt !== undefined && (
+                    <div className="text-[10px] text-[rgb(var(--muted-foreground))] mt-1">
+                      {new Date(voice.createdAt).toLocaleString('zh-CN')}
+                    </div>
+                  )}
                   <div className="flex gap-1 mt-2 pt-2 border-t border-[rgb(var(--border))]">
                     {voice.trialAudio && (
                       <button
@@ -461,7 +490,7 @@ export function VoiceLibrary() {
                       </button>
                     )}
                     <button
-                      onClick={() => setVoiceId(voice.voiceId)}
+                      onClick={() => setVoiceId(voice.voiceId, true)}
                       className="flex-1 text-[10px] py-1 rounded-md bg-primary-50 dark:bg-primary-950 hover:bg-primary-100 dark:hover:bg-primary-900 text-primary-600 transition-colors"
                     >
                       使用

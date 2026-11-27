@@ -5,6 +5,8 @@ import { useSettingsStore } from '@/lib/store/useSettingsStore';
 import { validateVoiceId } from '@/lib/utils';
 import { MODELS } from '@/lib/minimax/constants';
 import type { ClonedVoice, MiniMaxModel } from '@/lib/minimax/types';
+import { getVoiceStorageKey, updateVoiceCatalog, upsertVoice } from '@/lib/voices/custom-voices';
+import { useVoiceCatalog } from '@/lib/voices/useVoiceCatalog';
 import { cn } from '@/lib/utils';
 import { Mic, Upload, Check, Info } from 'lucide-react';
 
@@ -22,21 +24,10 @@ export function VoiceClonePanel() {
   const [volumeNormalization, setVolumeNormalization] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isCloning, setIsCloning] = useState(false);
+  const [savedLocally, setSavedLocally] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [demoAudio, setDemoAudio] = useState<string | null>(null);
-  const [clonedVoices, setClonedVoices] = useState<ClonedVoice[]>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        return JSON.parse(localStorage.getItem('tts-cloned-voices') || '[]');
-      } catch { return []; }
-    }
-    return [];
-  });
-
-  const saveClonedVoices = (voices: ClonedVoice[]) => {
-    setClonedVoices(voices);
-    localStorage.setItem('tts-cloned-voices', JSON.stringify(voices));
-  };
+  const { catalog: { cloned: clonedVoices }, storageError } = useVoiceCatalog();
 
   const handleUpload = async () => {
     if (!audioFile) return;
@@ -63,6 +54,7 @@ export function VoiceClonePanel() {
       }
 
       const data = await res.json();
+      if (settings.voiceAccountRevision !== useSettingsStore.getState().voiceAccountRevision) return;
       setFileId(data.file_id);
 
       // Upload prompt audio if provided
@@ -104,9 +96,11 @@ export function VoiceClonePanel() {
     }
 
     setError(null);
+    setSavedLocally(false);
     setIsCloning(true);
 
     try {
+      const storageKey = await getVoiceStorageKey(settings);
       const body = {
         file_id: fileId,
         voice_id: voiceId,
@@ -143,12 +137,14 @@ export function VoiceClonePanel() {
         demoAudio: data.demo_audio,
         fileId,
       };
-      saveClonedVoices([newVoice, ...clonedVoices]);
-
       setStep('result');
+      await updateVoiceCatalog(storageKey, (current) => ({
+        ...current, cloned: upsertVoice(current.cloned, newVoice),
+      }));
+      setSavedLocally(true);
 
       // Auto-play preview if available
-      if (data.demo_audio) {
+      if (data.demo_audio && settings.voiceAccountRevision === useSettingsStore.getState().voiceAccountRevision) {
         try {
           const a = new Audio(data.demo_audio);
         a.play().catch(() => {});
@@ -158,6 +154,18 @@ export function VoiceClonePanel() {
       setError(err instanceof Error ? err.message : 'Clone error');
     } finally {
       setIsCloning(false);
+    }
+  };
+
+  const removeClonedVoice = async (voiceId: string) => {
+    try {
+      setError(null);
+      const key = await getVoiceStorageKey(settings);
+      await updateVoiceCatalog(key, (current) => ({
+        ...current, cloned: current.cloned.filter((voice) => voice.voiceId !== voiceId),
+      }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '无法删除本地音色');
     }
   };
 
@@ -187,11 +195,11 @@ export function VoiceClonePanel() {
       </div>
 
       {/* Error */}
-      {error && (
+      {(error || storageError) && (
         <div className="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-sm flex items-start gap-2">
           <span>⚠️</span>
           <div>
-            <p>{error}</p>
+          <p>{error ?? storageError}</p>
             <button onClick={() => setError(null)} className="text-xs underline mt-1">关闭</button>
           </div>
         </div>
@@ -377,7 +385,9 @@ export function VoiceClonePanel() {
           )}
 
           <div className="p-3 rounded-lg bg-green-50 dark:bg-green-950 text-xs text-green-700 dark:text-green-300">
-            ✅ 音色已保存。在语音合成页面选择音色时可在自定义音色中找到它。请在 7 天内使用以保持有效。
+            {savedLocally
+              ? '✅ 音色已保存，可在「语音合成」的自定义音色中选择。请在 7 天内使用以保持有效。'
+              : '音色已在 MiniMax 创建，请保留音色 ID。'}
           </div>
 
           <button onClick={handleReset} className="btn-primary w-full">
@@ -397,9 +407,11 @@ export function VoiceClonePanel() {
               <div key={voice.voiceId} className="card p-3 flex items-center justify-between">
                 <div>
                   <div className="text-sm font-medium text-[rgb(var(--foreground))] font-mono">{voice.voiceId}</div>
-                  <div className="text-xs text-[rgb(var(--muted-foreground))]">
-                    创建于 {new Date(voice.createdAt).toLocaleString('zh-CN')}
-                  </div>
+                  {voice.createdAt !== undefined && (
+                    <div className="text-xs text-[rgb(var(--muted-foreground))]">
+                      创建于 {new Date(voice.createdAt).toLocaleString('zh-CN')}
+                    </div>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   {voice.demoAudio && (
@@ -415,10 +427,7 @@ export function VoiceClonePanel() {
                     </button>
                   )}
                   <button
-                    onClick={() => {
-                      const updated = clonedVoices.filter(v => v.voiceId !== voice.voiceId);
-                      saveClonedVoices(updated);
-                    }}
+                    onClick={() => removeClonedVoice(voice.voiceId)}
                     className="btn-ghost text-xs text-red-500 hover:text-red-600"
                   >
                     删除

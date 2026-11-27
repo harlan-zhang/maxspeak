@@ -5,6 +5,8 @@ import { useSettingsStore } from '@/lib/store/useSettingsStore';
 import { Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { DesignedVoice } from '@/lib/minimax/types';
+import { getVoiceStorageKey, updateVoiceCatalog, upsertVoice } from '@/lib/voices/custom-voices';
+import { useVoiceCatalog } from '@/lib/voices/useVoiceCatalog';
 
 function hexToAudioUrl(hex: string): string {
   const bytes = new Uint8Array(hex.length / 2);
@@ -21,24 +23,13 @@ export function VoiceDesignPanel() {
   const [previewText, setPreviewText] = useState('');
   const [voiceId, setVoiceId] = useState('');
   const [isDesigning, setIsDesigning] = useState(false);
+  const [savedLocally, setSavedLocally] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{
     voiceId: string;
     trialAudio: string;
   } | null>(null);
-  const [designedVoices, setDesignedVoices] = useState<DesignedVoice[]>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        return JSON.parse(localStorage.getItem('tts-designed-voices') || '[]');
-      } catch { return []; }
-    }
-    return [];
-  });
-
-  const saveDesignedVoices = (voices: DesignedVoice[]) => {
-    setDesignedVoices(voices);
-    localStorage.setItem('tts-designed-voices', JSON.stringify(voices));
-  };
+  const { catalog: { designed: designedVoices }, storageError } = useVoiceCatalog();
 
   const handleDesign = async () => {
     if (!prompt.trim() || !previewText.trim()) return;
@@ -48,9 +39,11 @@ export function VoiceDesignPanel() {
     }
 
     setError(null);
+    setSavedLocally(false);
     setIsDesigning(true);
 
     try {
+      const storageKey = await getVoiceStorageKey(settings);
       const body = {
         prompt: prompt.trim(),
         preview_text: previewText.trim(),
@@ -87,10 +80,13 @@ export function VoiceDesignPanel() {
         createdAt: Date.now(),
         trialAudio: data.trial_audio,
       };
-      saveDesignedVoices([newVoice, ...designedVoices]);
+      await updateVoiceCatalog(storageKey, (current) => ({
+        ...current, designed: upsertVoice(current.designed, newVoice),
+      }));
+      setSavedLocally(true);
 
       // Auto-play trial audio
-      if (data.trial_audio) {
+      if (data.trial_audio && settings.voiceAccountRevision === useSettingsStore.getState().voiceAccountRevision) {
         try {
           const url = hexToAudioUrl(data.trial_audio);
           new Audio(url).play().catch(() => {});
@@ -100,6 +96,18 @@ export function VoiceDesignPanel() {
       setError(err instanceof Error ? err.message : 'Design error');
     } finally {
       setIsDesigning(false);
+    }
+  };
+
+  const removeDesignedVoice = async (voiceId: string) => {
+    try {
+      setError(null);
+      const key = await getVoiceStorageKey(settings);
+      await updateVoiceCatalog(key, (current) => ({
+        ...current, designed: current.designed.filter((voice) => voice.voiceId !== voiceId),
+      }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '无法删除本地音色');
     }
   };
 
@@ -126,11 +134,11 @@ export function VoiceDesignPanel() {
       </div>
 
       {/* Error */}
-      {error && (
+      {(error || storageError) && (
         <div className="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-sm flex items-start gap-2">
           <span>⚠️</span>
           <div>
-            <p>{error}</p>
+            <p>{error ?? storageError}</p>
             <button onClick={() => setError(null)} className="text-xs underline mt-1">关闭</button>
           </div>
         </div>
@@ -237,7 +245,9 @@ export function VoiceDesignPanel() {
           )}
 
           <div className="p-3 rounded-lg bg-green-50 dark:bg-green-950 text-xs text-green-700 dark:text-green-300">
-            ✅ 音色已保存。在语音合成页面可通过音色 ID 使用此音色。请在 7 天内使用以保持有效。
+            {savedLocally
+              ? '✅ 音色已保存，可在「语音合成」的自定义音色中选择。请在 7 天内使用以保持有效。'
+              : '音色已在 MiniMax 创建，请保留音色 ID。'}
           </div>
 
           <button onClick={handleReset} className="btn-primary w-full">
@@ -257,9 +267,11 @@ export function VoiceDesignPanel() {
               <div key={voice.voiceId} className="card p-3">
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-sm font-medium text-[rgb(var(--foreground))] font-mono">{voice.voiceId}</div>
-                  <span className="text-xs text-[rgb(var(--muted-foreground))]">
-                    {new Date(voice.createdAt).toLocaleString('zh-CN')}
-                  </span>
+                  {voice.createdAt !== undefined && (
+                    <span className="text-xs text-[rgb(var(--muted-foreground))]">
+                      {new Date(voice.createdAt).toLocaleString('zh-CN')}
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs text-[rgb(var(--muted-foreground))] mb-2 line-clamp-2">
                   描述: {voice.prompt}
@@ -279,10 +291,7 @@ export function VoiceDesignPanel() {
                     </button>
                   )}
                   <button
-                    onClick={() => {
-                      const updated = designedVoices.filter(v => v.voiceId !== voice.voiceId);
-                      saveDesignedVoices(updated);
-                    }}
+                    onClick={() => removeDesignedVoice(voice.voiceId)}
                     className="btn-ghost text-xs text-red-500 hover:text-red-600"
                   >
                     删除

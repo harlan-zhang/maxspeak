@@ -102,6 +102,10 @@ Browser                Next.js Server                   MiniMax API
 
 Full list in `lib/voices/preset-voices.ts`.
 
+In Voice Library, sync from the API to save the current MiniMax account’s cloned and designed voices in this browser. Choose **Custom voices** in the synthesis language filter to use them. The browser stores a separate catalog for each API key and server. Changing either clears the selected custom voice.
+
+After upgrading, sync once with your original MiniMax configuration. The browser retains legacy records. Select the option to restore legacy previews and prompts before syncing to recover that information for voices with a matching category and ID. MiniMax returns a custom voice after it has been used successfully for synthesis.
+
 ## Audio Features
 
 - **Emotion Control** — happy, sad, angry, fearful, disgusted, surprised, neutral, fluent, whisper
@@ -145,6 +149,16 @@ maxspeak/
     ├── voices/         # 300+ preset voices, emotion tags, language data
     └── store/          # Zustand state stores
 ```
+
+## Changes and Verification
+
+### 1.0.1
+
+- Make synced cloned and designed voices available in the synthesis selector.
+- Share one account- and server-scoped catalog across cloning, design, and sync, with coordinated writes across tabs.
+- Normalize grouped and flat MiniMax voice lists and surface MiniMax errors during sync.
+
+Run `npm test` for voice-sync regressions, `npm run lint` for lint, and `npm run build` for the production build.
 
 ## License
 

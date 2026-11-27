@@ -13,6 +13,7 @@ export function HomeClient() {
   const activeTab = useNavStore((s) => s.activeTab);
   const apiKey = useSettingsStore((s) => s.apiKey);
   const baseUrl = useSettingsStore((s) => s.baseUrl);
+  const voiceAccountRevision = useSettingsStore((s) => s.voiceAccountRevision);
   const isCN = baseUrl.includes('minimaxi.com');
   const platformUrl = isCN ? 'https://platform.minimaxi.com' : 'https://platform.minimax.io';
   const platformHost = isCN ? 'platform.minimaxi.com' : 'platform.minimax.io';
@@ -62,9 +63,9 @@ export function HomeClient() {
             className="h-full"
           >
             {activeTab === 'tts' && <TextToSpeechPanel />}
-            {activeTab === 'clone' && <VoiceClonePanel />}
-            {activeTab === 'design' && <VoiceDesignPanel />}
-            {activeTab === 'library' && <VoiceLibrary />}
+            {activeTab === 'clone' && <VoiceClonePanel key={voiceAccountRevision} />}
+            {activeTab === 'design' && <VoiceDesignPanel key={voiceAccountRevision} />}
+            {activeTab === 'library' && <VoiceLibrary key={voiceAccountRevision} />}
           </motion.div>
         </AnimatePresence>
       </div>

@@ -263,16 +263,17 @@ export interface PresetVoice {
 export interface ClonedVoice {
   voiceId: string;
   name: string;
-  createdAt: number;
+  createdAt?: number;
   demoAudio?: string;
-  fileId: number;
+  fileId?: number;
 }
 
 export interface DesignedVoice {
   voiceId: string;
+  name?: string;
   prompt: string;
   previewText: string;
-  createdAt: number;
+  createdAt?: number;
   trialAudio?: string;
 }
 

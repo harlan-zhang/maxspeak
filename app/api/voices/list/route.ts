@@ -7,6 +7,7 @@ import {
   readTextLimited,
   UPSTREAM_TIMEOUT_MS,
 } from '@/lib/server/security';
+import { isVoiceRecord, normalizeVoiceList, voiceText } from '@/lib/voices/voice-list';
 
 /**
  * POST /api/voices/list
@@ -29,15 +30,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
 
-    // MiniMax get_voice requires page_num
-    const payload = {
-      voice_type: body.voice_type || 'all',
-      page_num: body.page_num ?? 1,
-      page_size: body.page_size ?? 500,
-    };
-
-    console.log('[get_voice] Request:', JSON.stringify(payload));
-    console.log('[get_voice] Base URL:', baseUrl);
+    const payload = { voice_type: body.voice_type || 'all' };
 
     const response = await fetchWithTimeout(`${baseUrl}/v1/get_voice`, {
       method: 'POST',
@@ -61,7 +54,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let data;
+    let data: unknown;
     try {
       data = JSON.parse(rawText);
     } catch {
@@ -69,47 +62,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Non-JSON response' }, { status: 502 });
     }
 
-    // Log response structure to debug
-    const keys = Object.keys(data);
-    console.log('[get_voice] Response keys:', keys);
-
-    // MiniMax returns voices under top-level keys:
-    // - system_voice (array or object keyed by language)
-    // - voice_cloning (array)
-    // - voice_generation (array)
-    let voices: any[] = data.voice_list || data.voices || [];
-
-    if (voices.length === 0 && data.data) {
-      voices = data.data.voice_list || data.data.voices || [];
+    if (!isVoiceRecord(data)) {
+      return NextResponse.json({ error: 'Invalid MiniMax voice list' }, { status: 502 });
     }
 
-    // Handle top-level grouped keys
-    if (voices.length === 0) {
-      for (const key of ['system_voice', 'system_voices', 'voice_cloning', 'voice_generation']) {
-        const val = data[key] ?? data.data?.[key];
-        if (val) {
-          if (Array.isArray(val)) {
-            voices.push(...val);
-          } else if (typeof val === 'object') {
-            // Grouped by language: e.g. { "Chinese": [...], "English": [...] }
-            for (const v of Object.values(val)) {
-              if (Array.isArray(v)) voices.push(...v);
-            }
-          }
-          console.log(`[get_voice] From '${key}': added ${Array.isArray(val) ? val.length : Object.keys(val).length} groups, total=${voices.length}`);
-        }
-      }
+    const nested = isVoiceRecord(data.data) ? data.data : undefined;
+    const baseResponse = data.base_resp ?? nested?.base_resp;
+    if (baseResponse !== undefined && (!isVoiceRecord(baseResponse) || baseResponse.status_code !== 0)) {
+      const message = isVoiceRecord(baseResponse) ? voiceText(baseResponse.status_msg) : undefined;
+      return NextResponse.json({ error: message ?? 'MiniMax voice list failed' }, { status: 502 });
     }
 
-    console.log('[get_voice] Found', voices.length, 'voices');
-    if (voices.length > 0) {
-      console.log('[get_voice] Sample:', JSON.stringify(voices[0]).slice(0, 200));
-    }
-
+    const voices = normalizeVoiceList(data);
     return NextResponse.json({
       voice_list: voices,
-      total_count: data.total_count || voices.length,
-      base_resp: data.base_resp,
+      total_count: data.total_count ?? nested?.total_count ?? voices.length,
+      base_resp: baseResponse,
     });
   } catch (error) {
     console.error('[get_voice] Exception:', error);

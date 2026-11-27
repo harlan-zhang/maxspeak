@@ -3,9 +3,10 @@
 import { useState, useMemo } from 'react';
 import { useTTSStore } from '@/lib/store/useTTSStore';
 import { PRESET_VOICES, VOICE_LANGUAGES, filterVoices } from '@/lib/voices/preset-voices';
+import { CUSTOM_VOICE_LANGUAGE, customVoiceOptions } from '@/lib/voices/custom-voices';
+import { useVoiceCatalog } from '@/lib/voices/useVoiceCatalog';
 import { VoiceCard } from './VoiceCard';
-import { Search } from 'lucide-react';
-import { User, UserRound, Bot } from 'lucide-react';
+import { Search, User, UserRound, Bot } from 'lucide-react';
 
 interface Props {
   onPreviewVoice?: (voiceId: string) => void;
@@ -18,17 +19,25 @@ export function VoiceSelector({ onPreviewVoice, previewLoading }: Props) {
   const [search, setSearch] = useState('');
   const [language, setLanguage] = useState<string>('');
   const [gender, setGender] = useState<string>('');
+  const { catalog, storageError } = useVoiceCatalog();
+  const customVoices = useMemo(() => customVoiceOptions(catalog), [catalog]);
+  const allVoices = useMemo(() => {
+    const byId = new Map([...customVoices, ...PRESET_VOICES].map((voice) => [voice.id, voice]));
+    return [...byId.values()];
+  }, [customVoices]);
+  const activeLanguage = language === CUSTOM_VOICE_LANGUAGE && !customVoices.length ? '' : language;
 
   const filtered = useMemo(
-    () => filterVoices(PRESET_VOICES, language || undefined, search || undefined, gender || undefined),
-    [language, search, gender]
+    () => filterVoices(allVoices, activeLanguage || undefined, search || undefined, gender || undefined),
+    [allVoices, activeLanguage, search, gender]
   );
 
-  const selectedVoice = PRESET_VOICES.find(v => v.id === voiceId);
+  const selectedVoice = allVoices.find((voice) => voice.id === voiceId);
 
   return (
     <div className="card p-3">
       <label className="label">音色选择</label>
+      {storageError && <p role="alert" className="text-xs text-red-600 mb-2">{storageError}</p>}
 
       {/* Selected Voice Display */}
       {selectedVoice && (
@@ -56,11 +65,12 @@ export function VoiceSelector({ onPreviewVoice, previewLoading }: Props) {
       {/* Filters */}
       <div className="flex gap-2 mb-3">
         <select
-          value={language}
+          value={activeLanguage}
           onChange={(e) => setLanguage(e.target.value)}
           className="input-field text-xs py-1 flex-1"
         >
           <option value="">全部语言</option>
+          {customVoices.length > 0 && <option value={CUSTOM_VOICE_LANGUAGE}>自定义音色</option>}
           {VOICE_LANGUAGES.map(l => (
             <option key={l.code} value={l.code}>{l.label}</option>
           ))}
@@ -89,7 +99,7 @@ export function VoiceSelector({ onPreviewVoice, previewLoading }: Props) {
             key={voice.id}
             voice={voice}
             isSelected={voice.id === voiceId}
-            onSelect={() => setVoiceId(voice.id)}
+            onSelect={() => setVoiceId(voice.id, voice.language === CUSTOM_VOICE_LANGUAGE)}
             onPreview={onPreviewVoice}
             previewLoading={previewLoading === voice.id}
           />

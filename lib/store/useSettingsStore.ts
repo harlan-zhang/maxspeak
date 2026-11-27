@@ -6,6 +6,7 @@ interface SettingsState {
   // API configuration
   apiKey: string;
   baseUrl: string;
+  voiceAccountRevision: number;
   directConnect: boolean; // true = browser direct to MiniMax, false = proxy via Next.js API routes
 
   // Default TTS preferences
@@ -41,6 +42,7 @@ export const useSettingsStore = create<SettingsState>()(
     (set) => ({
       apiKey: '',
       baseUrl: 'https://api.minimax.io',
+      voiceAccountRevision: 0,
       directConnect: false,
 
       defaultModel: 'speech-2.8-hd',
@@ -54,8 +56,14 @@ export const useSettingsStore = create<SettingsState>()(
       autoPlay: true,
       autoStream: true,
 
-      setApiKey: (apiKey) => set({ apiKey }),
-      setBaseUrl: (baseUrl) => set({ baseUrl }),
+      setApiKey: (apiKey) => set((state) => apiKey === state.apiKey ? state : {
+        apiKey,
+        voiceAccountRevision: state.voiceAccountRevision + 1,
+      }),
+      setBaseUrl: (baseUrl) => set((state) => baseUrl === state.baseUrl ? state : {
+        baseUrl,
+        voiceAccountRevision: state.voiceAccountRevision + 1,
+      }),
       setDirectConnect: (directConnect) => set({ directConnect }),
       setDefaultModel: (defaultModel) => set({ defaultModel }),
       setDefaultFormat: (defaultFormat) => set({ defaultFormat }),
