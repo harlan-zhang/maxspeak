@@ -1,34 +1,19 @@
 'use client';
 
-import { useRef } from 'react';
 import { useTTSStore } from '@/lib/store/useTTSStore';
 import { PARALINGUISTIC_TAGS, PARALINGUISTIC_CATEGORIES, PARALINGUISTIC_SUPPORTED_MODELS } from '@/lib/voices/paralinguistic';
+import { insertIntoActiveTextarea } from '@/lib/text/insert-at-cursor';
 import { cn } from '@/lib/utils';
 
 export function ParalinguisticTagInserter() {
   const setText = useTTSStore((s) => s.setText);
   const text = useTTSStore((s) => s.text);
   const model = useTTSStore((s) => s.model);
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const isSupported = PARALINGUISTIC_SUPPORTED_MODELS.includes(model);
 
   const insertTag = (tagText: string) => {
-    // Find the textarea in the DOM and insert at cursor position
-    const textarea = document.querySelector('textarea') as HTMLTextAreaElement | null;
-    if (textarea) {
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-      const newText = text.slice(0, start) + tagText + text.slice(end);
-      setText(newText);
-      // Restore cursor position after React re-render
-      setTimeout(() => {
-        textarea.focus();
-        textarea.setSelectionRange(start + tagText.length, start + tagText.length);
-      }, 0);
-    } else {
-      setText(text + tagText);
-    }
+    insertIntoActiveTextarea(text, tagText, setText);
   };
 
   if (!isSupported) {
