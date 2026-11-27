@@ -11,7 +11,8 @@ import {
 } from './transport-protocol';
 
 export const PLANNER_PROVIDERS = {
-  minimax: { label: 'MiniMax', model: 'MiniMax-M3.1-Flash' },
+  minimax: { label: 'MiniMax 国际站', model: 'MiniMax-M3.1-Flash' },
+  'minimax-cn': { label: 'MiniMax 国内站', model: 'MiniMax-M3.1-Flash' },
   openai: { label: 'OpenAI', model: 'gpt-6.1-terra' },
   deepseek: { label: 'DeepSeek', model: 'deepseek-flash' },
   openrouter: { label: 'OpenRouter', model: 'openai/gpt-6.1-terra' },

@@ -12,6 +12,7 @@ import {
 
 const PRESET_ENDPOINTS: Record<keyof typeof PLANNER_PROVIDERS, string> = {
   minimax: 'https://api.minimax.io/v1/chat/completions',
+  'minimax-cn': 'https://api.minimax.cn/v1/chat/completions',
   openai: 'https://api.openai.com/v1/chat/completions',
   deepseek: 'https://api.deepseek.com/chat/completions',
   openrouter: 'https://openrouter.ai/api/v1/chat/completions',

@@ -179,12 +179,14 @@ test('accepts an HTTPS LAN gateway without a key', timeout, async () => {
 test('relay calls only fixed official endpoints and defaults to each preset model', timeout, async () => {
   const urls = {
     minimax: 'https://api.minimax.io/v1/chat/completions',
+    'minimax-cn': 'https://api.minimax.cn/v1/chat/completions',
     openai: 'https://api.openai.com/v1/chat/completions',
     deepseek: 'https://api.deepseek.com/chat/completions',
     openrouter: 'https://openrouter.ai/api/v1/chat/completions',
   };
   const models = {
     minimax: 'MiniMax-M3.1-Flash',
+    'minimax-cn': 'MiniMax-M3.1-Flash',
     openai: 'gpt-6.1-terra',
     deepseek: 'deepseek-flash',
     openrouter: 'openai/gpt-6.1-terra',
@@ -206,7 +208,7 @@ test('relay calls only fixed official endpoints and defaults to each preset mode
     assert.equal(new Headers(call.options.headers).get('authorization'), 'Bearer planner-secret');
     assert.equal(transport().PLANNER_PROVIDERS[provider].model, models[provider]);
     assert.equal(call.body.model, models[provider]);
-    if (provider === 'minimax') {
+    if (provider === 'minimax' || provider === 'minimax-cn') {
       assert.equal(call.body.reasoning_split, true);
       assert.equal(call.body.reasoning_effort, 'low');
       assert.notEqual(call.body.thinking?.type, 'disabled');
@@ -223,6 +225,20 @@ test('relay null input uses the same fixed connection probe as custom', timeout,
   const response = await route().POST(relayRequest({ provider: 'deepseek', input: null }));
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { suggestions: [] });
+});
+
+test('supports promotional style and opt-in copy suggestions through the relay', timeout, async () => {
+  const manuscript = { ...input, style: 'promo', allowRewrites: true };
+  const { route } = fixtures(async (_url, options) => {
+    const { messages } = JSON.parse(options.body);
+    assert.deepEqual(JSON.parse(messages[1].content), manuscript);
+    assert.match(messages[0].content, /xing2 hong2/);
+    assert.match(messages[0].content, /九块九/);
+    assert.match(messages[0].content, /opening[^\n]+title[^\n]+ending/);
+    return completion('{"suggestions":[]}');
+  });
+  assert.equal((await route().POST(relayRequest({ provider: 'minimax', input: manuscript }))).status, 200);
+  assert.equal((await route().POST(relayRequest({ provider: 'minimax', input: { ...manuscript, allowRewrites: 'true' } }))).status, 400);
 });
 
 test('relay rejects custom providers, prototype keys, supplied base URLs, absent keys and invalid bodies', timeout, async () => {

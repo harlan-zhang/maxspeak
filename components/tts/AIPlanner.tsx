@@ -26,6 +26,7 @@ const STYLE_LABELS: Record<PlannerStyle, string> = {
   natural: '自然',
   'short-video': '短视频口播',
   story: '讲故事',
+  promo: '宣传片旁白',
 };
 
 const KIND_LABELS: Record<PlannerSuggestion['kind'], string> = {
@@ -33,7 +34,11 @@ const KIND_LABELS: Record<PlannerSuggestion['kind'], string> = {
   effect: '副语言',
   filler: '语气词',
   pronunciation: '发音',
+  price: '价格读法',
+  rewrite: '口播润色',
 };
+
+const PROMO_LABELS = { opening: '宏大开场', title: '正式标题', ending: '片尾收束' };
 
 const STALE_MESSAGE = '稿件、发音词典或合成模型已变更，请重新分析。';
 const MUTED_TEXT = 'text-xs text-[rgb(var(--muted-foreground))]';
@@ -178,7 +183,7 @@ function SuggestionPreview({ plan, suggestion }: { plan: PlanSnapshot; suggestio
 function suggestionLocation(suggestion: PlannerSuggestion) {
   const position = suggestion.kind === 'pronunciation'
     ? '的发音'
-    : suggestion.offset === suggestion.start ? '之前' : '之后';
+    : 'offset' in suggestion ? (suggestion.offset === suggestion.start ? '之前' : '之后') : '';
   return `第 ${suggestion.segmentId} 段 ·「${suggestion.anchor}」${position}（原稿第 ${suggestion.start + 1}–${suggestion.end} 字符）`;
 }
 
@@ -188,6 +193,7 @@ export function AIPlanner({ textareaRef }: { textareaRef: RefObject<HTMLTextArea
   })));
   const [style, setStyle] = useState<PlannerStyle>('natural');
   const [allowFillers, setAllowFillers] = useState(false);
+  const [allowRewrites, setAllowRewrites] = useState(false);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [checked, setChecked] = useState<Set<string>>(() => new Set());
   const [error, setError] = useState('');
@@ -229,7 +235,7 @@ export function AIPlanner({ textareaRef }: { textareaRef: RefObject<HTMLTextArea
 
     let run: PlannerRun;
     try {
-      run = createPlannerRun({ text, model, pronunciationEntries }, selection, style, allowFillers);
+      run = createPlannerRun({ text, model, pronunciationEntries }, selection, style, allowFillers, allowRewrites);
     } catch (error) {
       setError(errorMessage(error, '无法分析稿件，请检查文本后重试。'));
       return;
@@ -368,6 +374,19 @@ export function AIPlanner({ textareaRef }: { textareaRef: RefObject<HTMLTextArea
           />
           允许建议语气词
         </label>
+        <label className="flex cursor-pointer items-center gap-2 self-center text-sm sm:self-end sm:pb-2.5">
+          <input
+            type="checkbox"
+            checked={allowRewrites}
+            disabled={isAnalyzing}
+            onChange={(event) => {
+              setAllowRewrites(event.target.checked);
+              clearAnalysis();
+            }}
+            className="rounded accent-violet-600"
+          />
+          口播润色与价格读法
+        </label>
         <button
           type="button"
           onClick={analyze}
@@ -389,7 +408,10 @@ export function AIPlanner({ textareaRef }: { textareaRef: RefObject<HTMLTextArea
           </button>
         )}
       </div>
-      <p id={scopeId} className={MUTED_TEXT}>分析编辑器中的选区。没有选区时分析整稿。</p>
+      <p id={scopeId} className={MUTED_TEXT}>
+        分析编辑器中的选区。没有选区时分析整稿。
+        {style === 'promo' && !allowRewrites && ' 勾选口播润色与价格读法可获得开场、标题和片尾的措辞建议。'}
+      </p>
 
       <div role="status" className={MUTED_TEXT}>
         {isAnalyzing && `正在分析${analysis.scope}…`}
@@ -418,7 +440,9 @@ export function AIPlanner({ textareaRef }: { textareaRef: RefObject<HTMLTextArea
                   />
                   <span className="min-w-0 space-y-1">
                     <span className="flex flex-wrap items-baseline gap-x-2 text-sm">
-                      <span className="font-semibold">{KIND_LABELS[suggestion.kind]}</span>
+                      <span className="font-semibold">
+                        {suggestion.kind === 'rewrite' && suggestion.focus ? PROMO_LABELS[suggestion.focus] : KIND_LABELS[suggestion.kind]}
+                      </span>
                       <span className="whitespace-pre-wrap break-all font-mono">{suggestion.value}</span>
                     </span>
                     <span className={`block break-words ${MUTED_TEXT}`}>{suggestionLocation(suggestion)}</span>

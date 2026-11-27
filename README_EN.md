@@ -40,13 +40,13 @@ Open [http://localhost:3000](http://localhost:3000), click the settings gear, pa
 
 ## AI Voice Planner
 
-1. In **Settings → AI 配音编排**, choose MiniMax, OpenAI, DeepSeek, or OpenRouter, then enter a text model ID and key. Choose the custom provider to use an OpenAI Chat Completions-compatible base URL (for example, `http://localhost:11434/v1`) and model ID. Use the connection test to send a fixed test message.
-2. Enter your script in Text to Speech. Choose Natural, Short-Video Voiceover, or Storytelling and analyze the current selection or the entire script. Enable filler suggestions if you want the model to propose spoken interjections such as “um” and “oh.”
-3. Review each suggestion and preview the original and suggested versions of the same passage. When you analyze a selection, previews stay within that selection. Check the changes you want and apply them. Pauses and vocal cues go into the script, while Pinyin, IPA, and aliases go into the existing pronunciation dictionary. Editing the script, dictionary, or speech model requires a fresh analysis. You can undo the latest application.
+1. In **Settings → AI 配音编排**, choose the provider that issued your key. The presets include MiniMax China, MiniMax International, OpenAI, DeepSeek, and OpenRouter. Enter a text model ID and key. Choose the custom provider to use an OpenAI Chat Completions-compatible base URL (for example, `http://localhost:11434/v1`) and model ID. Use the connection test to send a fixed test message.
+2. Enter your script in Text to Speech. Choose Natural, Short-Video Voiceover, Storytelling, or Promotional Narration and analyze the current selection or the entire script. Enable filler suggestions for spoken interjections. Enable copy edits and price readings for spoken phrasing and local price readings such as `9.9` as `九块九`. Promotional Narration can suggest edits to the opening, title, and closing.
+3. Review each suggestion and preview the original and suggested versions of the same passage. When you analyze a selection, previews stay within that selection. Check the changes you want and apply them. Copy edits and price readings replace the selected passage. Pinyin, IPA, and aliases go into the pronunciation dictionary, for example `xing2 hong2` for `行洪`. Editing the script, dictionary, or speech model requires a fresh analysis. You can undo the latest application.
 
 The text model and speech synthesis use separate keys. The text key lives in the current page's memory. Switching providers, editing the base URL, or refreshing clears it. Presets go through the app's fixed provider relay. Custom URLs connect directly from the browser. Public URLs require HTTPS. Local HTTP connections are subject to browser permissions and the gateway's CORS settings, and can use a blank key. Each A/B preview makes one synchronous MiniMax synthesis request per version using the selected voice and settings.
 
-The planner preserves the original spoken text by default. Speech 2.8 HD and Turbo support vocal cues. The pronunciation dictionary applies to the entire script, so the planner accepts only unique terms compatible with existing manual rules. See the [MiniMax speech synthesis documentation](https://platform.minimax.io/docs/api-reference/speech-t2a-http.md) for supported formats.
+Copy edits are off by default and leave passages containing Arabic numerals alone. Price readings cover RMB amounts from 1 to 99.99 with one or two decimal digits, marked with `元` or immediately following a price cue such as `只需` or `现价`. Speech 2.8 HD and Turbo support vocal cues. The pronunciation dictionary applies to the entire script, so the planner accepts only unique terms compatible with existing manual rules. See the [MiniMax speech synthesis documentation](https://platform.minimax.io/docs/api-reference/speech-t2a-http.md) for supported formats.
 
 ## Deploy
 
@@ -163,6 +163,15 @@ maxspeak/
 ```
 
 ## Changes and Verification
+
+### 1.2.0
+
+- Add Promotional Narration, optional copy edits and RMB price readings, more fillers, and pronunciation prompts for technical terms. Suggestions support A/B previews, individual selection, and undo.
+- Regression tests cover repeated prices, existing pause markers, technical-term pronunciation, and protections for numeric values and existing pronunciation entries.
+
+### 1.1.1
+
+- Add MiniMax China to AI voice planning. Each MiniMax region uses its official text endpoint with shared model options. `npm test` covers the request URLs and options for both presets.
 
 ### 1.1.0
 

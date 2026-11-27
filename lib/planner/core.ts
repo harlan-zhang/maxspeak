@@ -2,13 +2,14 @@ import { PARAM_RANGES } from '../minimax/constants';
 import { formatPauseSeconds, MAX_PAUSE_SECONDS, MIN_PAUSE_SECONDS } from '../text/pause';
 import { PARALINGUISTIC_SUPPORTED_MODELS, PARALINGUISTIC_TAGS } from '../voices/paralinguistic';
 
-export const PLANNER_STYLES = ['natural', 'short-video', 'story'] as const;
+export const PLANNER_STYLES = ['natural', 'short-video', 'story', 'promo'] as const;
+export const PROMO_FOCUSES = ['opening', 'title', 'ending'] as const;
 export const AI_EFFECT_TAGS = [
   'laughs', 'chuckle', 'coughs', 'clear-throat', 'groans', 'breath', 'pant', 'inhale',
   'exhale', 'gasps', 'sniffs', 'sighs', 'snorts', 'burps', 'lip-smacking', 'humming',
   'hissing', 'emm', 'sneezes',
 ] as const;
-export const PLANNER_FILLERS = ['嗯', '啊', '呃', '哦', '欸', '哎', '呵', '唔', '诶', 'um', 'uh', 'oh', 'ah', 'hmm', 'well'] as const;
+export const PLANNER_FILLERS = ['嗯', '啊', '呃', '哦', '欸', '哎', '呵', '唔', '诶', '哇', '哎呀', 'um', 'uh', 'oh', 'ah', 'hmm', 'well'] as const;
 export const MAX_PLANNER_SUGGESTIONS = 60;
 const MAX_FILLERS = 3;
 const SEGMENT_SIZE = 500;
@@ -19,8 +20,10 @@ const PUNCTUATION_OR_SPACE = /^[\p{P}\p{Z}\s]*$/u;
 const MARKER_CANDIDATE = /<#[^<>\r\n]*#>|\(([^()\r\n]+)\)/g;
 const IPA = /^[\p{Script=Latin}\p{M}ˈˌːˑ.‿ -]+$/u;
 const IPA_SYMBOL = /[\u0250-\u02ff\u0300-\u036f\u1d00-\u1dff‿]/u;
+const PRICE_CUE = /(?:原价|现价|售价|标价|价格|到手价?|活动价|会员价|优惠价|秒杀价|促销价|团购价|特价|只需要?|仅需要?|仅售|只要|只卖|低至|立减|直降)\s*(?:为|是)?[\s:：]*$/u;
 
 export type PlannerStyle = typeof PLANNER_STYLES[number];
+type PromoFocus = typeof PROMO_FOCUSES[number];
 export type PronunciationEntry = { original: string; pronunciation: string };
 
 export interface PlannerDraft {
@@ -34,6 +37,7 @@ export interface PlannerInput {
   style: PlannerStyle;
   speechModel: string;
   allowFillers: boolean;
+  allowRewrites?: boolean;
 }
 
 interface Range {
@@ -64,12 +68,13 @@ interface SuggestionBase extends Range {
   id: string;
   segmentId: string;
   anchor: string;
-  value: string;
   reason: string;
 }
-export type PlannerSuggestion = SuggestionBase & (
+export type PlannerSuggestion = SuggestionBase & { value: string } & (
   | { kind: 'pause' | 'effect' | 'filler'; offset: number }
   | { kind: 'pronunciation'; format: 'pinyin' | 'ipa' | 'alias' }
+  | { kind: 'price' }
+  | { kind: 'rewrite'; focus?: PromoFocus }
 );
 
 function isExistingMarker(parenthetical: string | undefined) {
@@ -166,6 +171,7 @@ export function createPlannerRun(
   selection: Range | null,
   style: PlannerStyle,
   allowFillers: boolean,
+  allowRewrites = false,
 ): PlannerRun {
   if (draft.text.length > MAX_TEXT_LENGTH) {
     throw new Error('配音编排的原稿需少于 10,000 字符。');
@@ -192,6 +198,7 @@ export function createPlannerRun(
       style,
       speechModel: snapshot.model,
       allowFillers,
+      allowRewrites,
     },
     segments,
     markers,
@@ -242,24 +249,78 @@ function formatPronunciation(anchor: string, format: string, value: string) {
   }
 }
 
+function findAnchorOffset(text: string, anchor: string, occurrence: unknown, eligible?: (offset: number) => boolean) {
+  if (occurrence !== undefined && (typeof occurrence !== 'number' || !Number.isSafeInteger(occurrence)
+    || occurrence < 1 || occurrence > text.length)) return -1;
+  let match = -1;
+  let count = 0;
+  for (let offset = text.indexOf(anchor); offset >= 0; offset = text.indexOf(anchor, offset + 1)) {
+    if (eligible && !eligible(offset)) continue;
+    if (++count === occurrence) return offset;
+    if (occurrence === undefined && count > 1) return -1;
+    match = offset;
+  }
+  return occurrence === undefined ? match : -1;
+}
+
+function formatPrice(text: string, anchor: string, start: number) {
+  const amount = /^([1-9]\d?)\.(\d)(\d?)(?: *(元))?$/u.exec(anchor);
+  const before = text.slice(Math.max(0, start - 30), start);
+  const end = start + anchor.length;
+  if (!amount || (!amount[4] && !PRICE_CUE.test(before)) || /(?:[-−＋+\p{Sc}]\s*|[\d.,])$/u.test(before)
+    || /^\s*(?:[\d%％]|[.,]\d|元|块|折|版本|美元|美金|港元|港币|日元|欧元|英镑|台币|新台币|加元|澳元)/u.test(text.slice(end))) return null;
+
+  const [, yuan, jiao, fen = ''] = amount;
+  const digits = '零一二三四五六七八九';
+  const yuanSpoken = yuan.length === 1 ? digits[Number(yuan)]
+    : (yuan[0] === '1' ? '' : digits[Number(yuan[0])]) + '十' + (yuan[1] === '0' ? '' : digits[Number(yuan[1])]);
+  const cents = Number(fen) ? `${jiao === '0' ? '零' : digits[Number(jiao)] + '毛'}${digits[Number(fen)]}分`
+    : jiao === '0' ? '' : digits[Number(jiao)];
+  return cents ? yuanSpoken + '块' + cents : yuanSpoken + '块';
+}
+
+function normalizeRewrite(run: PlannerRun, base: SuggestionBase, kind: 'price' | 'rewrite', value: unknown, focus: unknown): PlannerSuggestion | null {
+  const text = run.draft.text;
+  if (!run.input.allowRewrites || run.dictionaryRanges.some((range) => overlaps(range, base))
+    || run.wordRanges.some((range) => crossesPoint(range, base.start) || crossesPoint(range, base.end))) return null;
+  const id = `replace-${base.start}-${base.end}`;
+  if (kind === 'price') {
+    const spoken = formatPrice(text, base.anchor, base.start);
+    return spoken ? { ...base, id, kind, value: spoken } : null;
+  }
+
+  if (typeof value !== 'string') return null;
+  const replacement = value.trim();
+  if (!SPEAKABLE.test(replacement) || base.anchor.trim() !== base.anchor || /[\r\n]/u.test(base.anchor)
+    || replacement === base.anchor || /[<>\p{C}]/u.test(replacement) || findMarkers(replacement).length
+    || /\p{N}/u.test(base.anchor) || /\p{N}/u.test(replacement)) return null;
+
+  const promoFocus = PROMO_FOCUSES.find((option) => option === focus);
+  if (focus !== undefined && (run.input.style !== 'promo' || !promoFocus)) return null;
+  return { ...base, id, kind, value: replacement, focus: promoFocus };
+}
+
 function normalizeSuggestion(run: PlannerRun, raw: unknown): PlannerSuggestion | null {
   if (!raw || typeof raw !== 'object') return null;
-  const { segmentId, anchor, position, kind, format, value, reason } = raw as Record<string, unknown>;
+  const { segmentId, anchor, position, kind, format, value, reason, occurrence, focus } = raw as Record<string, unknown>;
   if (typeof anchor !== 'string' || anchor.length > 120 || !SPEAKABLE.test(anchor)
     || typeof reason !== 'string' || !reason.trim() || reason.length > 240
-    || typeof value !== 'string' || !value.trim() || value.length > 100) return null;
+    || (kind !== 'price' && (typeof value !== 'string' || !value.trim() || value.length > 100))) return null;
 
   const segment = run.segments.find(({ id }) => id === segmentId);
   if (!segment) return null;
-  const localStart = segment.text.indexOf(anchor);
-  if (localStart < 0 || segment.text.indexOf(anchor, localStart + 1) !== -1) return null;
+  const text = run.draft.text;
+  const eligible = kind === 'price' ? (offset: number) => Boolean(formatPrice(text, anchor, segment.start + offset)) : undefined;
+  const localStart = findAnchorOffset(segment.text, anchor, kind === 'price' || kind === 'rewrite' ? occurrence : undefined, eligible);
+  if (localStart < 0) return null;
   const start = segment.start + localStart;
   const end = start + anchor.length;
   if (run.markers.some((marker) => overlaps(marker, { start, end }))
     || splitsSurrogate(run.draft.text, start) || splitsSurrogate(run.draft.text, end)) return null;
 
   const base = { id: '', segmentId: segment.id, start, end, anchor, reason: reason.trim() };
-  const text = run.draft.text;
+  if (kind === 'price' || kind === 'rewrite') return normalizeRewrite(run, base, kind, value, focus);
+  if (typeof value !== 'string') return null;
   if (kind === 'pronunciation') {
     if (format !== 'pinyin' && format !== 'ipa' && format !== 'alias') return null;
     const pronunciation = formatPronunciation(anchor, format, value.trim().normalize('NFC'));
@@ -298,10 +359,8 @@ function normalizeSuggestion(run: PlannerRun, raw: unknown): PlannerSuggestion |
 }
 
 function conflicts(text: string, a: PlannerSuggestion, b: PlannerSuggestion) {
-  if (a.kind === 'pronunciation' && b.kind === 'pronunciation') return overlaps(a, b);
-  if (a.kind === 'pronunciation' && b.kind !== 'pronunciation') return crossesPoint(a, b.offset);
-  if (a.kind !== 'pronunciation' && b.kind === 'pronunciation') return crossesPoint(b, a.offset);
-  if (a.kind === 'pronunciation' || b.kind === 'pronunciation') return false;
+  if (!('offset' in a)) return 'offset' in b ? crossesPoint(a, b.offset) : overlaps(a, b);
+  if (!('offset' in b)) return crossesPoint(b, a.offset);
 
   const between = text.slice(Math.min(a.offset, b.offset), Math.max(a.offset, b.offset));
   return a.offset === b.offset
@@ -318,47 +377,72 @@ export function validatePlannerSuggestions(run: PlannerRun, raw: unknown[]) {
     const suggestion = normalizeSuggestion(run, item);
     if (!suggestion || suggestions.some((other) => conflicts(run.draft.text, suggestion, other))) continue;
     if (suggestion.kind === 'filler' && fillers >= MAX_FILLERS) continue;
-    if (suggestion.kind !== 'pronunciation' && length + suggestion.value.length > MAX_TEXT_LENGTH) continue;
-    if (!keepsPronunciationsUnique(run.draft, [...suggestions, suggestion])) continue;
+    const edit = suggestion.kind === 'pronunciation' ? null : textEdit(suggestion);
+    // Every visible suggestion can be selected independently of suggestions that shorten the draft.
+    const lengthChange = edit ? Math.max(0, edit.value.length - (edit.end - edit.start)) : 0;
+    if (length + lengthChange > MAX_TEXT_LENGTH) continue;
+    const combined = [...suggestions, suggestion];
+    if (!keepsPronunciationsUnique(run.draft, combined) || !keepsMarkers(run, combined)) continue;
+    if (suggestions.length && (suggestion.kind === 'rewrite' || suggestion.kind === 'price')
+      && (!keepsPronunciationsUnique(run.draft, [suggestion]) || !keepsMarkers(run, [suggestion]))) continue;
 
     if (suggestion.kind === 'filler') fillers++;
-    if (suggestion.kind !== 'pronunciation') length += suggestion.value.length;
+    length += lengthChange;
     suggestions.push(suggestion);
   }
   return { suggestions, rejected: raw.length - suggestions.length };
 }
 
+function textEdit(suggestion: Exclude<PlannerSuggestion, { kind: 'pronunciation' }>) {
+  const { start, end, value } = suggestion;
+  return 'offset' in suggestion ? { start: suggestion.offset, end: suggestion.offset, value } : { start, end, value };
+}
+
 function renderSuggestions(draft: PlannerDraft, suggestions: PlannerSuggestion[], rangeStart = 0): PlannerDraft {
   const pronunciationEntries = [...draft.pronunciationEntries];
-  const insertions: (PlannerSuggestion & { offset: number })[] = [];
+  const edits: (Range & { value: string })[] = [];
   for (const suggestion of suggestions) {
     if (suggestion.kind === 'pronunciation') {
       pronunciationEntries.push({ original: suggestion.anchor, pronunciation: suggestion.value });
     } else {
-      insertions.push(suggestion);
+      edits.push(textEdit(suggestion));
     }
   }
   let text = draft.text;
-  for (const { offset, value } of insertions.sort((a, b) => b.offset - a.offset)) {
-    const index = offset - rangeStart;
-    text = text.slice(0, index) + value + text.slice(index);
+  for (const { start, end, value } of edits.sort((a, b) => b.start - a.start || b.end - a.end)) {
+    text = text.slice(0, start - rangeStart) + value + text.slice(end - rangeStart);
   }
   return { ...draft, text, pronunciationEntries };
 }
 
 function keepsPronunciationsUnique(draft: PlannerDraft, suggestions: PlannerSuggestion[], renderedText?: string) {
   const pronunciations = suggestions.filter(({ kind }) => kind === 'pronunciation');
-  if (!pronunciations.length || pronunciations.length === suggestions.length) return true;
+  const checkManual = draft.pronunciationEntries.length > 0 && suggestions.some(({ kind }) => kind === 'rewrite' || kind === 'price');
+  if (!checkManual && (!pronunciations.length || pronunciations.length === suggestions.length)) return true;
   const text = renderedText ?? renderSuggestions(draft, suggestions).text;
-  return pronunciations.every(({ anchor }) => findOccurrences(text, anchor).length === 1);
+  return pronunciations.every(({ anchor }) => findOccurrences(text, anchor).length === 1)
+    && (!checkManual || draft.pronunciationEntries.every(({ original }) =>
+      findOccurrences(text, original).length === findOccurrences(draft.text, original).length));
+}
+
+function keepsMarkers(run: PlannerRun, suggestions: PlannerSuggestion[], renderedText?: string) {
+  if (!suggestions.some(({ kind }) => kind === 'rewrite' || kind === 'price')) return true;
+  const text = renderedText ?? renderSuggestions(run.draft, suggestions).text;
+  const expected = run.markers.map(({ start, end }) => run.draft.text.slice(start, end));
+  expected.push(...suggestions.filter(({ kind }) => kind === 'pause' || kind === 'effect').map(({ value }) => value));
+  const actual = findMarkers(text).map(({ start, end }) => text.slice(start, end));
+  if (expected.length !== actual.length) return false;
+  actual.sort();
+  return expected.sort().every((marker, index) => marker === actual[index]);
 }
 
 export function applyPlannerSuggestions(run: PlannerRun, suggestions: PlannerSuggestion[]): PlannerDraft {
   const updated = renderSuggestions(run.draft, suggestions);
   if (updated.text.length > MAX_TEXT_LENGTH) throw new Error('应用后会超过配音字数限制。');
   if (!keepsPronunciationsUnique(run.draft, suggestions, updated.text)) {
-    throw new Error('所选建议会让发音规则匹配多个位置，请取消冲突的插入或发音建议。');
+    throw new Error('所选建议改变了发音规则的匹配范围，请取消冲突的建议。');
   }
+  if (!keepsMarkers(run, suggestions, updated.text)) throw new Error('所选建议影响了合成标记，请取消冲突的建议。');
   return updated;
 }
 

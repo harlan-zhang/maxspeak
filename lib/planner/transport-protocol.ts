@@ -53,10 +53,11 @@ export function parsePlannerInput(value: unknown): PlannerInput | null {
   if (value === null) return null;
   if (!isRecord(value)) throw new PlannerTransportError('invalid_request');
 
-  const { segments, style, speechModel, allowFillers } = value;
+  const { segments, style, speechModel, allowFillers, allowRewrites } = value;
   const plannerStyle = PLANNER_STYLES.find((candidate) => candidate === style);
   if (!Array.isArray(segments) || segments.length === 0 || !plannerStyle
-    || !isShortString(speechModel, MAX_MODEL_LENGTH) || typeof allowFillers !== 'boolean') {
+    || !isShortString(speechModel, MAX_MODEL_LENGTH) || typeof allowFillers !== 'boolean'
+    || (allowRewrites !== undefined && typeof allowRewrites !== 'boolean')) {
     throw new PlannerTransportError('invalid_request');
   }
   if (segments.length > MAX_SEGMENTS) throw new PlannerTransportError('request_too_large');
@@ -74,7 +75,10 @@ export function parsePlannerInput(value: unknown): PlannerInput | null {
     return { id: segment.id, text: segment.text };
   });
 
-  return { segments: checkedSegments, style: plannerStyle, speechModel, allowFillers };
+  return {
+    segments: checkedSegments, style: plannerStyle, speechModel, allowFillers,
+    ...(allowRewrites === undefined ? {} : { allowRewrites }),
+  };
 }
 
 export function parsePlannerModel(value: unknown, defaultModel?: string): string {
