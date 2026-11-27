@@ -21,6 +21,7 @@
 | Feature | Description |
 |---------|-------------|
 | **Text to Speech** | Convert any text to natural speech with 9 emotion styles, paralinguistic tags (sighs/laughs/breaths), and fine-grained speed/pitch/timbre controls |
+| **AI Voice Planner** | Suggest pauses, vocal cues, and pronunciations for a selection or the full script, with per-suggestion A/B previews and undo |
 | **Voice Cloning** | Upload a 10-second audio sample and replicate any voice — ideal for creators, podcasts, audiobooks, and accessibility |
 | **Voice Design** | Describe a voice in plain English and let AI create it — "a warm, friendly female voice for a bedtime story" |
 | **Streaming & Sync** | Get instant playback via SSE streaming for long texts, or download high-quality audio files |
@@ -36,6 +37,16 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000), click the settings gear, paste your [MiniMax API key](https://platform.minimax.io), and start generating speech.
+
+## AI Voice Planner
+
+1. In **Settings → AI 配音编排**, choose MiniMax, OpenAI, DeepSeek, or OpenRouter, then enter a text model ID and key. Choose the custom provider to use an OpenAI Chat Completions-compatible base URL (for example, `http://localhost:11434/v1`) and model ID. Use the connection test to send a fixed test message.
+2. Enter your script in Text to Speech. Choose Natural, Short-Video Voiceover, or Storytelling and analyze the current selection or the entire script. Enable filler suggestions if you want the model to propose spoken interjections such as “um” and “oh.”
+3. Review each suggestion and preview the original and suggested versions of the same passage. When you analyze a selection, previews stay within that selection. Check the changes you want and apply them. Pauses and vocal cues go into the script, while Pinyin, IPA, and aliases go into the existing pronunciation dictionary. Editing the script, dictionary, or speech model requires a fresh analysis. You can undo the latest application.
+
+The text model and speech synthesis use separate keys. The text key lives in the current page's memory. Switching providers, editing the base URL, or refreshing clears it. Presets go through the app's fixed provider relay. Custom URLs connect directly from the browser. Public URLs require HTTPS. Local HTTP connections are subject to browser permissions and the gateway's CORS settings, and can use a blank key. Each A/B preview makes one synchronous MiniMax synthesis request per version using the selected voice and settings.
+
+The planner preserves the original spoken text by default. Speech 2.8 HD and Turbo support vocal cues. The pronunciation dictionary applies to the entire script, so the planner accepts only unique terms compatible with existing manual rules. See the [MiniMax speech synthesis documentation](https://platform.minimax.io/docs/api-reference/speech-t2a-http.md) for supported formats.
 
 ## Deploy
 
@@ -133,7 +144,7 @@ maxspeak/
 ├── app/
 │   ├── layout.tsx      # Layout + SEO metadata
 │   ├── page.tsx        # Main page with tab routing
-│   └── api/            # 7 API route handlers
+│   └── api/            # 8 API route handlers
 ├── components/
 │   ├── layout/         # Sidebar, Header, ThemeProvider
 │   ├── tts/            # Text-to-Speech panel & controls
@@ -145,6 +156,7 @@ maxspeak/
 ├── public/             # Logo, poster, and static assets
 └── lib/
     ├── minimax/        # API client, types, constants
+    ├── planner/        # AI planning, suggestion validation, and application
     ├── audio/          # Playback engine, stream decoder, utilities
     ├── voices/         # 300+ preset voices, emotion tags, language data
     └── store/          # Zustand state stores
@@ -152,13 +164,18 @@ maxspeak/
 
 ## Changes and Verification
 
+### 1.1.0
+
+- Add AI voice planning for selections and full scripts with three styles, pause and pronunciation suggestions, optional fillers, A/B previews, and undo.
+- Use separate text model settings for four preset providers, custom public gateways, and local compatible models.
+- Move mobile navigation into a drawer to give the editor and previews the full workspace width.
+- Run `npm test` for voice sync, suggestion validation, atomic apply and undo, fixed provider routing, and custom direct connections. Use `npm run lint` and `npm run build` for lint and the production build.
+
 ### 1.0.1
 
 - Make synced cloned and designed voices available in the synthesis selector.
 - Share one account- and server-scoped catalog across cloning, design, and sync, with coordinated writes across tabs.
 - Normalize grouped and flat MiniMax voice lists and surface MiniMax errors during sync.
-
-Run `npm test` for voice-sync regressions, `npm run lint` for lint, and `npm run build` for the production build.
 
 ## License
 

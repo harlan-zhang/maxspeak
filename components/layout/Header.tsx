@@ -4,24 +4,26 @@ import { useState } from 'react';
 import { SettingsPanel } from '@/components/settings/SettingsPanel';
 import { useSettingsStore } from '@/lib/store/useSettingsStore';
 import { cn } from '@/lib/utils';
-import { PanelLeftClose, PanelLeftOpen, Settings, Circle, Github } from 'lucide-react';
+import { PanelLeftClose, PanelLeftOpen, Settings, Circle, Github, Menu, X } from 'lucide-react';
 
 interface HeaderProps {
   onToggleSidebar: () => void;
   sidebarOpen: boolean;
+  mobileSidebarOpen: boolean;
+  onToggleMobileSidebar: () => void;
 }
 
-export function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
+export function Header({ onToggleSidebar, sidebarOpen, mobileSidebarOpen, onToggleMobileSidebar }: HeaderProps) {
   const [showSettings, setShowSettings] = useState(false);
   const apiKey = useSettingsStore((s) => s.apiKey);
 
   return (
     <>
-      <header className="h-14 border-b border-[rgb(var(--border))] bg-[rgb(var(--surface))] flex items-center justify-between px-5 flex-shrink-0">
+      <header className="h-14 border-b border-[rgb(var(--border))] bg-[rgb(var(--surface))] flex items-center justify-between px-3 sm:px-5 flex-shrink-0">
         <div className="flex items-center gap-3">
           <button
             onClick={onToggleSidebar}
-            className="p-1.5 rounded-lg hover:bg-[rgb(var(--muted))] transition-colors"
+            className="hidden p-1.5 rounded-lg hover:bg-[rgb(var(--muted))] transition-colors md:inline-flex"
             title={sidebarOpen ? '收起侧栏' : '展开侧栏'}
           >
             {sidebarOpen ? (
@@ -29,6 +31,16 @@ export function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
             ) : (
               <PanelLeftOpen size={18} className="text-[rgb(var(--muted-foreground))]" />
             )}
+          </button>
+          <button
+            type="button"
+            onClick={onToggleMobileSidebar}
+            aria-label={mobileSidebarOpen ? '收起导航' : '打开导航'}
+            aria-expanded={mobileSidebarOpen}
+            aria-controls="workbench-navigation"
+            className="p-1.5 rounded-lg text-[rgb(var(--muted-foreground))] hover:bg-[rgb(var(--muted))] md:hidden"
+          >
+            {mobileSidebarOpen ? <X size={18} /> : <Menu size={18} />}
           </button>
 
           <h1 className="text-sm font-semibold text-[rgb(var(--foreground))] tracking-tight">

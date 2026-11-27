@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { TextInput } from './TextInput';
+import { AIPlanner } from './AIPlanner';
 import { VoiceSelector } from './VoiceSelector';
 import { ModelSelector } from './ModelSelector';
 import { EmotionTags } from './EmotionTags';
@@ -51,6 +52,7 @@ import { formatToExtension } from '@/lib/audio/utils';
 import { stopCurrent } from '@/lib/audio/player';
 import { streamAndPlay } from '@/lib/audio/stream-decoder';
 import { PRICING, PARAM_RANGES } from '@/lib/minimax/constants';
+import { buildSynthesisRequest } from '@/lib/minimax/synthesis';
 import { AudioLines, Radio, AlertCircle, CircleCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { PRESET_VOICES } from '@/lib/voices/preset-voices';
@@ -63,6 +65,7 @@ export function TextToSpeechPanel() {
   const [error, setError] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [previewLoading, setPreviewLoading] = useState<string | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const shouldStream = tts.stream || (settings.autoStream && tts.text.length > PARAM_RANGES.streamingTextThreshold);
   const isTextOverLimit = tts.text.length > PARAM_RANGES.textMaxLength;
@@ -107,39 +110,7 @@ export function TextToSpeechPanel() {
     player.setLoading(true);
     stopCurrent();
 
-    const requestBody = {
-      model: tts.model,
-      text: tts.text,
-      voice_setting: {
-        voice_id: tts.voiceId,
-        speed: tts.speed,
-        vol: tts.volume,
-        pitch: tts.pitch,
-        ...(tts.emotion ? { emotion: tts.emotion } : {}),
-      },
-      audio_setting: {
-        sample_rate: tts.sampleRate,
-        bitrate: tts.bitrate,
-        format: tts.audioFormat,
-        channel: tts.channel,
-      },
-      language_boost: tts.languageBoost,
-      ...(tts.voiceModify && Object.keys(tts.voiceModify).length > 0
-        ? { voice_modify: tts.voiceModify }
-        : {}
-      ),
-      ...(tts.pronunciationEntries.length > 0
-        ? {
-            pronunciation_dict: {
-              tone: tts.pronunciationEntries.map(
-                (e) => `${e.original}/${e.pronunciation}`
-              ),
-            },
-          }
-        : {}
-      ),
-      output_format: 'hex' as const, // hex mode is more reliable than URL (avoids CDN expiry & format mismatch)
-    };
+    const requestBody = buildSynthesisRequest(tts);
 
     try {
       if (shouldStream) {
@@ -237,14 +208,16 @@ export function TextToSpeechPanel() {
     } finally {
       setIsSynthesizing(false);
     }
-  }, [tts.text, tts.model, tts.voiceId, tts.speed, tts.volume, tts.pitch, tts.emotion, tts.audioFormat, tts.sampleRate, tts.bitrate, tts.channel, tts.languageBoost, tts.voiceModify, tts.pronunciationEntries, shouldStream, isTextOverLimit, textLimitError, settings, player]);
+  }, [tts, shouldStream, isTextOverLimit, textLimitError, settings, player]);
 
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left: Text Input & Core Controls */}
         <div className="lg:col-span-2 space-y-4">
-          <TextInput />
+          <TextInput textareaRef={textareaRef} />
+
+          <AIPlanner textareaRef={textareaRef} />
 
           <PauseTagInserter />
 

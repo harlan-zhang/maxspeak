@@ -1,11 +1,12 @@
 import { create } from 'zustand';
 import type { MiniMaxModel, Emotion, AudioFormat, SampleRate, AudioChannel, LanguageBoost, VoiceModify, OutputFormat } from '@/lib/minimax/types';
 import { isSameVoiceAccount } from '@/lib/voices/custom-voices';
+import { samePlannerDraft, type PlannerDraft, type PronunciationEntry } from '@/lib/planner/core';
 import { useSettingsStore } from './useSettingsStore';
 
 const DEFAULT_VOICE_ID = 'Chinese (Mandarin)_Reliable_Executive';
 
-interface TTSState {
+export interface TTSState {
   // Current TTS parameters
   model: MiniMaxModel;
   text: string;
@@ -25,7 +26,9 @@ interface TTSState {
   stream: boolean;
 
   // Pronunciation dictionary entries
-  pronunciationEntries: { original: string; pronunciation: string }[];
+  pronunciationEntries: PronunciationEntry[];
+  plannerDraftRevision: number;
+  plannerUndo: { before: PlannerDraft; after: PlannerDraft } | null;
 
   // Actions
   setModel: (model: MiniMaxModel) => void;
@@ -45,6 +48,8 @@ interface TTSState {
   setStream: (stream: boolean) => void;
   addPronunciationEntry: (original: string, pronunciation: string) => void;
   removePronunciationEntry: (index: number) => void;
+  applyPlannerDraft: (expected: PlannerDraft, next: PlannerDraft, expectedRevision?: number) => boolean;
+  undoPlannerDraft: () => boolean;
   resetToDefaults: (defaults: {
     model: MiniMaxModel;
     audioFormat: AudioFormat;
@@ -55,7 +60,14 @@ interface TTSState {
   }) => void;
 }
 
-export const useTTSStore = create<TTSState>()((set) => ({
+function updateDraft(state: TTSState, change: Partial<PlannerDraft>) {
+  const next = { text: state.text, model: state.model, pronunciationEntries: state.pronunciationEntries, ...change };
+  return samePlannerDraft(state, next)
+    ? {}
+    : { plannerDraftRevision: state.plannerDraftRevision + 1, plannerUndo: null };
+}
+
+export const useTTSStore = create<TTSState>()((set, get) => ({
   model: 'speech-2.8-hd',
   text: '',
   voiceId: DEFAULT_VOICE_ID,
@@ -74,9 +86,11 @@ export const useTTSStore = create<TTSState>()((set) => ({
   stream: false,
 
   pronunciationEntries: [],
+  plannerDraftRevision: 0,
+  plannerUndo: null,
 
-  setModel: (model) => set({ model }),
-  setText: (text) => set({ text }),
+  setModel: (model) => set((state) => ({ model, ...updateDraft(state, { model }) })),
+  setText: (text) => set((state) => ({ text, ...updateDraft(state, { text }) })),
   setVoiceId: (voiceId, accountBoundVoice = false) => set({ voiceId, accountBoundVoice }),
   setSpeed: (speed) => set({ speed }),
   setVolume: (volume) => set({ volume }),
@@ -92,24 +106,53 @@ export const useTTSStore = create<TTSState>()((set) => ({
   setStream: (stream) => set({ stream }),
 
   addPronunciationEntry: (original, pronunciation) =>
-    set((state) => ({
-      pronunciationEntries: [...state.pronunciationEntries, { original, pronunciation }],
-    })),
+    set((state) => {
+      const pronunciationEntries = [...state.pronunciationEntries, { original, pronunciation }];
+      return { pronunciationEntries, ...updateDraft(state, { pronunciationEntries }) };
+    }),
 
   removePronunciationEntry: (index) =>
-    set((state) => ({
-      pronunciationEntries: state.pronunciationEntries.filter((_, i) => i !== index),
-    })),
+    set((state) => {
+      const pronunciationEntries = state.pronunciationEntries.filter((_, i) => i !== index);
+      return { pronunciationEntries, ...updateDraft(state, { pronunciationEntries }) };
+    }),
+
+  applyPlannerDraft: (expected, next, expectedRevision) => {
+    const state = get();
+    if (next.model !== state.model || (expectedRevision !== undefined && expectedRevision !== state.plannerDraftRevision)
+      || !samePlannerDraft(state, expected) || samePlannerDraft(state, next)) return false;
+    set({
+      text: next.text,
+      pronunciationEntries: next.pronunciationEntries,
+      plannerDraftRevision: state.plannerDraftRevision + 1,
+      plannerUndo: { before: expected, after: next },
+    });
+    return true;
+  },
+
+  undoPlannerDraft: () => {
+    const state = get();
+    const undo = state.plannerUndo;
+    if (!undo || !samePlannerDraft(state, undo.after)) return false;
+    set({
+      text: undo.before.text,
+      pronunciationEntries: undo.before.pronunciationEntries,
+      plannerDraftRevision: state.plannerDraftRevision + 1,
+      plannerUndo: null,
+    });
+    return true;
+  },
 
   resetToDefaults: (defaults) =>
-    set({
+    set((state) => ({
+      ...updateDraft(state, { model: defaults.model }),
       model: defaults.model,
       audioFormat: defaults.audioFormat,
       sampleRate: defaults.sampleRate,
       bitrate: defaults.bitrate,
       channel: defaults.channel,
       languageBoost: defaults.languageBoost,
-    }),
+    })),
 }));
 
 useSettingsStore.subscribe((next, previous) => {

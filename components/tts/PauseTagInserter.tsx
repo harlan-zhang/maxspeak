@@ -4,16 +4,10 @@ import { useState } from 'react';
 import { Clock3, Plus } from 'lucide-react';
 import { useTTSStore } from '@/lib/store/useTTSStore';
 import { insertIntoActiveTextarea } from '@/lib/text/insert-at-cursor';
+import { formatPauseSeconds, MAX_PAUSE_SECONDS, MIN_PAUSE_SECONDS } from '@/lib/text/pause';
 import { cn } from '@/lib/utils';
 
 const QUICK_PAUSES = [0.25, 0.5, 1, 2];
-const MIN_PAUSE_SECONDS = 0.01;
-const MAX_PAUSE_SECONDS = 99.99;
-
-function formatPauseSeconds(value: number) {
-  return value.toFixed(2).replace(/\.?0+$/, '');
-}
-
 function normalizePauseSeconds(value: string) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return null;

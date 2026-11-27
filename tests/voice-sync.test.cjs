@@ -1,34 +1,7 @@
 const assert = require('node:assert/strict');
 const { webcrypto } = require('node:crypto');
-const fs = require('node:fs');
-const path = require('node:path');
 const { test } = require('node:test');
-const ts = require('typescript');
-
-function loadTypeScript(entry, globals = {}, modules = new Map()) {
-  const filename = path.resolve(__dirname, '..', entry);
-  if (modules.has(filename)) return modules.get(filename);
-  const source = fs.readFileSync(filename, 'utf8');
-  const code = ts.transpileModule(source, {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-    fileName: filename,
-  }).outputText;
-  const exports = {};
-  modules.set(filename, exports);
-  const load = (id) => {
-    if (id.startsWith('@/')) {
-      return loadTypeScript(id.slice(2) + '.ts', globals, modules);
-    }
-    if (id.startsWith('.')) {
-      return loadTypeScript(path.resolve(path.dirname(filename), id) + '.ts', globals, modules);
-    }
-    return require(id);
-  };
-  new Function('exports', 'require', ...Object.keys(globals), code)(
-    exports, load, ...Object.values(globals)
-  );
-  return exports;
-}
+const loadTypeScript = require('./load-typescript.cjs');
 
 function postVoiceList(response, onPayload = () => {}) {
   const { POST } = loadTypeScript('app/api/voices/list/route.ts', {
@@ -100,7 +73,7 @@ function catalogFixture() {
   return { ...catalog, values, browser };
 }
 
-test('sync merges into the latest saved catalog and keeps local audio', async () => {
+test('sync merges into the latest saved catalog and keeps local audio', { timeout: 60_000 }, async () => {
   const {
     getVoiceStorageKey, readVoiceCatalog, updateVoiceCatalog, mergeSyncedVoices, upsertVoice,
   } = catalogFixture();
@@ -123,7 +96,7 @@ test('sync merges into the latest saved catalog and keeps local audio', async ()
   assert.deepEqual(saved.designed.map(({ voiceId }) => voiceId), ['design-id']);
 });
 
-test('account storage is isolated and matching legacy metadata requires opt-in', async () => {
+test('account storage is isolated and matching legacy metadata requires opt-in', { timeout: 60_000 }, async () => {
   const { getVoiceStorageKey, readVoiceCatalog, saveSyncedVoices, values } = catalogFixture();
   const international = 'https://api.minimax.io';
   const accountA = await getVoiceStorageKey({ apiKey: 'account-a', baseUrl: international });
@@ -150,7 +123,7 @@ test('account storage is isolated and matching legacy metadata requires opt-in',
   assert.equal(values.get('tts-cloned-voices'), legacy);
 });
 
-test('a failed storage write keeps both categories at the previous snapshot', async () => {
+test('a failed storage write keeps both categories at the previous snapshot', { timeout: 60_000 }, async () => {
   const { getVoiceStorageKey, readVoiceCatalog, saveSyncedVoices, browser } = catalogFixture();
   const key = await getVoiceStorageKey({ apiKey: 'account-a', baseUrl: 'https://api.minimax.io' });
   await saveSyncedVoices(key, { cloned: [{ voiceId: 'old', name: 'Old' }], designed: [] });
@@ -165,7 +138,7 @@ test('a failed storage write keeps both categories at the previous snapshot', as
   assert.deepEqual(readVoiceCatalog(key).designed, []);
 });
 
-test('changing the API key or server clears an account-bound selection', (context) => {
+test('changing the API key or server clears an account-bound selection', { timeout: 60_000 }, (context) => {
   const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
   Object.defineProperty(globalThis, 'window', {
     configurable: true,

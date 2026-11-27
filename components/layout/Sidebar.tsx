@@ -10,7 +10,9 @@ type Tab = 'tts' | 'clone' | 'design' | 'library';
 
 interface SidebarProps {
   isOpen: boolean;
+  mobileOpen: boolean;
   onToggle: () => void;
+  onMobileClose: () => void;
 }
 
 const tabs: { id: Tab; label: string; icon: typeof Volume2 }[] = [
@@ -20,33 +22,38 @@ const tabs: { id: Tab; label: string; icon: typeof Volume2 }[] = [
   { id: 'library', label: '音色库', icon: Library },
 ];
 
-export function Sidebar({ isOpen, onToggle }: SidebarProps) {
+export function Sidebar({ isOpen, mobileOpen, onToggle, onMobileClose }: SidebarProps) {
   const activeTab = useNavStore((s) => s.activeTab);
   const setActiveTab = useNavStore((s) => s.setActiveTab);
 
   return (
     <aside
+      id="workbench-navigation"
       className={cn(
-        'flex flex-col border-r border-[rgb(var(--border))] bg-[rgb(var(--surface))] transition-all duration-300',
-        isOpen ? 'w-60' : 'w-[68px]'
+        'fixed inset-y-0 left-0 z-40 flex w-60 shrink-0 flex-col border-r border-[rgb(var(--border))] bg-[rgb(var(--surface))] transition-transform duration-300 md:static md:visible md:z-auto md:translate-x-0 md:transition-[width]',
+        !mobileOpen && 'invisible -translate-x-full',
+        !isOpen && 'md:w-[68px]'
       )}
     >
       {/* Logo */}
       <div className="flex items-center h-14 px-4 border-b border-[rgb(var(--border))]">
-        <button onClick={onToggle} className="flex items-center gap-3 w-full text-left">
+        <button
+          type="button"
+          onClick={mobileOpen ? onMobileClose : onToggle}
+          aria-label={mobileOpen ? '关闭导航菜单' : isOpen ? '收起侧栏' : '展开侧栏'}
+          className="flex items-center gap-3 w-full text-left"
+        >
           <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden">
             <Image src="/logo.webp" alt="MaxSpeak" width={32} height={32} className="w-full h-full object-contain" />
           </div>
-          {isOpen && (
-            <div className="overflow-hidden min-w-0">
-              <div className="font-semibold text-sm text-[rgb(var(--foreground))] leading-tight">
-                MaxSpeak
-              </div>
-              <div className="text-[11px] text-[rgb(var(--muted-foreground))] font-medium">
-                AI TTS Studio
-              </div>
+          <div className={cn('overflow-hidden min-w-0', !isOpen && 'md:hidden')}>
+            <div className="font-semibold text-sm text-[rgb(var(--foreground))] leading-tight">
+              MaxSpeak
             </div>
-          )}
+            <div className="text-[11px] text-[rgb(var(--muted-foreground))] font-medium">
+              AI TTS Studio
+            </div>
+          </div>
         </button>
       </div>
 
@@ -58,10 +65,14 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
           return (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => {
+                setActiveTab(tab.id);
+                onMobileClose();
+              }}
               className={cn(
                 'w-full flex items-center gap-3 rounded-xl text-sm transition-all duration-200',
-                isOpen ? 'px-3 py-2.5' : 'px-0 py-2.5 justify-center',
+                'px-3 py-2.5',
+                !isOpen && 'md:px-0 md:justify-center',
                 isActive
                   ? 'bg-violet-50 dark:bg-violet-500/10 text-violet-700 dark:text-violet-300 font-medium'
                   : 'text-[rgb(var(--muted-foreground))] hover:bg-[rgb(var(--muted))] hover:text-[rgb(var(--foreground))]'
@@ -72,22 +83,20 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
                 'flex-shrink-0 transition-colors',
                 isActive && 'text-violet-600 dark:text-violet-400'
               )} />
-              {isOpen && <span className="truncate">{tab.label}</span>}
+              <span className={cn('truncate', !isOpen && 'md:hidden')}>{tab.label}</span>
             </button>
           );
         })}
       </nav>
 
       {/* Theme Toggle */}
-      {isOpen && (
-        <div className="p-3 border-t border-[rgb(var(--border))]">
-          <div className="flex gap-1 bg-[rgb(var(--muted))] rounded-xl p-0.5">
-            <ThemeButton mode="light" icon={Sun} />
-            <ThemeButton mode="dark" icon={Moon} />
-            <ThemeButton mode="system" icon={Monitor} />
-          </div>
+      <div className={cn('p-3 border-t border-[rgb(var(--border))]', !isOpen && 'md:hidden')}>
+        <div className="flex gap-1 bg-[rgb(var(--muted))] rounded-xl p-0.5">
+          <ThemeButton mode="light" icon={Sun} />
+          <ThemeButton mode="dark" icon={Moon} />
+          <ThemeButton mode="system" icon={Monitor} />
         </div>
-      )}
+      </div>
     </aside>
   );
 }

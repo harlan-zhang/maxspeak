@@ -36,6 +36,7 @@ export async function POST(request: NextRequest) {
 
     const response = await fetchWithTimeout(`${baseUrl}/v1/t2a_v2`, {
       method: 'POST',
+      redirect: 'error',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',

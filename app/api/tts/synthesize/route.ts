@@ -86,12 +86,10 @@ export async function POST(request: NextRequest) {
     const sampleRate: number = body.audio_setting?.sample_rate || 32000;
     const channels: number = body.audio_setting?.channel || 1;
 
-    const logBody = { ...body, text: (body.text || '').slice(0, 40) };
-    console.log('[synthesize] → MiniMax', JSON.stringify(logBody));
-
     // Use hex mode — we always get raw bytes, no CDN expiry issues
     const ttsRes = await fetchWithTimeout(`${baseUrl}/v1/t2a_v2`, {
       method: 'POST',
+      redirect: 'error',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
@@ -102,7 +100,7 @@ export async function POST(request: NextRequest) {
     const ttsText = await readTextLimited(ttsRes);
 
     if (!ttsRes.ok) {
-      console.error('[synthesize] MiniMax error:', ttsRes.status, ttsText.slice(0, 400));
+      console.error('[synthesize] MiniMax HTTP error:', ttsRes.status);
       return NextResponse.json(
         { error: `MiniMax API ${ttsRes.status}: ${ttsText.slice(0, 200)}` },
         { status: ttsRes.status }
@@ -154,7 +152,7 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('[synthesize] Exception:', error);
+    console.error('[synthesize] Request failed:', error instanceof Error ? error.name : 'Unknown error');
     if (isAbortError(error)) {
       return NextResponse.json({ error: 'MiniMax API request timed out' }, { status: 504 });
     }

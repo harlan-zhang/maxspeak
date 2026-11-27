@@ -1,6 +1,6 @@
 {
   "name": "maxspeak",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "private": true,
   "description": "MaxSpeak — AI Text to Speech Studio with Voice Cloning & Voice Design, powered by MiniMax API",
   "scripts": {
@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node --test tests/voice-sync.test.cjs",
+    "test": "node --test tests/voice-sync.test.cjs tests/planner-core.test.cjs tests/planner-transport.test.cjs",
     "cf:build": "npx @cloudflare/next-on-pages",
     "cf:deploy": "npx @cloudflare/next-on-pages && npx wrangler pages deploy .vercel/output/static"
   },

@@ -6,6 +6,7 @@ import { MINIMAX_API_BASE, MINIMAX_API_BASE_CN, MODELS, AUDIO_FORMATS, SAMPLE_RA
 import { LANGUAGE_OPTIONS } from '@/lib/voices/languages';
 import { cn } from '@/lib/utils';
 import type { MiniMaxModel, AudioFormat, SampleRate, AudioChannel, LanguageBoost } from '@/lib/minimax/types';
+import { PlannerConnectionSettings } from './PlannerConnectionSettings';
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -100,6 +101,11 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
             </div>
           </section>
 
+          <section>
+            <h3 className="text-sm font-semibold text-[rgb(var(--foreground))] mb-3">AI 配音编排</h3>
+            <PlannerConnectionSettings showHeading={false} />
+          </section>
+
           {/* Default TTS Preferences */}
           <section>
             <h3 className="text-sm font-semibold text-[rgb(var(--foreground))] mb-3">默认合成参数</h3>
@@ -184,7 +190,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               清除所有本地数据
             </button>
             <p className="text-xs text-[rgb(var(--muted-foreground))] mt-2">
-              API Key 仅存储在浏览器本地，不会上传到任何服务器
+              MiniMax 合成 Key 保存在此浏览器，合成时随请求转发给 MiniMax。
             </p>
           </section>
         </div>
